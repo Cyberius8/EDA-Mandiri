@@ -59,7 +59,7 @@ pip install streamlit pandas numpy plotly requests folium streamlit-folium
 
 **Menjalankan Aplikasi**
 ```bash
-streamlit run app_optimized.py
+streamlit run app4.py
 # buka: http://localhost:8501
 ```
 
