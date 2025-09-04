@@ -261,5 +261,5 @@ CREATE TABLE employees (
 ### 🧩 Appendix — Snippet Jalankan Cepat
 ```bash
 pip install streamlit pandas numpy plotly requests folium streamlit-folium
-streamlit run app_optimized.py
+streamlit run app4.py
 ```
