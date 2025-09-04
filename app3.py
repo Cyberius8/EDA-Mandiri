@@ -12,7 +12,8 @@ from datetime import datetime
 from math import atan2, radians, degrees, sin, cos
 import math
 from urllib.parse import quote_plus
-
+from pandas.api.types import CategoricalDtype 
+from io import BytesIO
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -427,13 +428,11 @@ def photo_url_from_row(row: pd.Series, id_col: str | None, photo_col: str | None
 
 def clean_dataframe_for_arrow(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    # Normalisasi placeholder
     for col in df.columns:
         if pd.api.types.is_object_dtype(df[col]) or pd.api.types.is_string_dtype(df[col]):
             df[col] = df[col].apply(
                 lambda x: np.nan if (pd.isna(x) or str(x).strip() in PLACEHOLDERS) else x
             )
-    # Upcast numerik bila mayoritas numeric-like
     for col in df.columns:
         s = df[col]
         if pd.api.types.is_object_dtype(s) or pd.api.types.is_string_dtype(s):
@@ -445,9 +444,10 @@ def clean_dataframe_for_arrow(df: pd.DataFrame) -> pd.DataFrame:
                     df[col] = s_num.astype(float)
             else:
                 df[col] = s.astype(str)
-        elif pd.api.types.is_categorical_dtype(s):
+        elif isinstance(s.dtype, CategoricalDtype):
             df[col] = s.astype(str)
     return df
+
 
 
 def norm_txt(x):
@@ -733,8 +733,11 @@ def page_update_data():
             st.error("Mohon upload **kedua** file terlebih dahulu.")
             return
         try:
-            df_b_raw = pd.read_excel(up_branch)
-            df_e_raw = pd.read_excel(up_employee)
+            df_b_raw = pd.read_excel(BytesIO(up_branch.read()), engine="openpyxl")
+            df_e_raw = pd.read_excel(BytesIO(up_employee.read()), engine="openpyxl")
+        except ImportError as e:
+            st.error("`openpyxl` belum terpasang. Jalankan: pip install openpyxl")
+            return
         except Exception as e:
             st.error(f"Gagal membaca Excel: {e}")
             return
@@ -774,6 +777,7 @@ def page_distribution_branch():
     st.session_state.setdefault("map_focus", None)         # (lat, lon) untuk zoom fokus
     st.session_state.setdefault("map_zoom", 9)             # zoom untuk map_focus
     st.session_state.setdefault("suppress_route", False)   # True = jangan gambar route
+    
 
     st.subheader("🗺️ Distribution Branch — Peta Interaktif")
 
@@ -934,9 +938,10 @@ def page_distribution_branch():
         unit         = unit
         lat, lon    = float(row["Latitude"]), float(row["Longitude"])
         gmaps_url    = f"https://maps.google.com/?q={lat},{lon}"
-        detail_url   = f"?route=detaile&unit={quote_plus(unit)}"
-        set_start    = f"?route=branch&set_start={quote_plus(unit)}"
-        set_end      = f"?route=branch&set_end={quote_plus(unit)}"
+        detail_url = f"?route=detailb&unit={quote_plus(unit)}"
+        set_start  = _link_setpoint("start", unit)
+        set_end    = _link_setpoint("end", unit)
+
 
         popup_html = f"""
         <div data-unit="{unit}" style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
