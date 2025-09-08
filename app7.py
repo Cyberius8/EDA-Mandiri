@@ -1011,6 +1011,17 @@ def attach_unit_norm(df_b: pd.DataFrame, df_e: pd.DataFrame):
         else:
             df_e["_unit_norm"] = None
     return df_b, df_e, bcol
+import sqlite3
+from contextlib import contextmanager
+
+@contextmanager
+def _conn():
+    # timeout lebih besar untuk menghindari lock sementara (mis. OneDrive)
+    con = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
+    try:
+        yield con
+    finally:
+        con.close()
 
 @st.cache_data(show_spinner=False)
 def load_data(db_path: str) -> tuple[pd.DataFrame, pd.DataFrame, str, pd.DataFrame]:
@@ -1037,6 +1048,9 @@ def load_data(db_path: str) -> tuple[pd.DataFrame, pd.DataFrame, str, pd.DataFra
 
 
 df_branch, df_employee, BRANCH_UNIT_COL, unit_map = load_data(DB_PATH)
+import threading
+_DB_WRITE_LOCK = threading.Lock()
+
 
 
 def replace_table(df: pd.DataFrame, table_name: str):
