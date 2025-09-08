@@ -115,12 +115,36 @@ from pathlib import Path
 
 # 1) Ambil dari secrets/env kalau ada; kalau tidak, pakai ./data/bank_dashboard.db (relatif ke file ini)
 _DB_DEFAULT = Path(__file__).resolve().parent / "data" / "bank_dashboard.db"
-DB_PATH = Path(
-    os.environ.get("APP_DB_PATH")              # bisa set via env
-    or os.environ.get("BASE_DB_PATH")          # alias env lain (opsional)
-    or (st.secrets.get("DB_PATH", None) if hasattr(st, "secrets") else None)  # streamlit secrets
-    or _DB_DEFAULT
-)
+# --- di import atas
+from pathlib import Path
+import os
+import streamlit as st
+
+# --- helper aman: tidak error meski secrets.toml tidak ada
+def _get_secret(key: str, default=None):
+    try:
+        # akses .get bisa melempar StreamlitSecretNotFoundError jika secrets tidak ada
+        return st.secrets.get(key, default)  # type: ignore[attr-defined]
+    except Exception:
+        return default
+
+# --- DB path fleksibel & tahan tanpa secrets.toml
+_DB_DEFAULT = Path(__file__).resolve().parent / "data" / "bank_dashboard.db"
+_db_from_env = os.environ.get("APP_DB_PATH") or os.environ.get("BASE_DB_PATH")
+_db_from_secret = _get_secret("DB_PATH")   # ← aman, takkan crash bila secrets kosong
+DB_PATH = Path(_db_from_env or _db_from_secret or _DB_DEFAULT)
+
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+if not DB_PATH.exists():
+    DB_PATH.touch()
+
+# --- Base URL juga aman tanpa secrets.toml
+def _base_prefix() -> str:
+    base = os.environ.get("APP_BASE_URL") or os.environ.get("BASE_PREFIX")
+    if not base:
+        base = _get_secret("APP_BASE_URL", "/")  # ← aman
+    return str(base).rstrip("/")
+
 
 def _ensure_db_writable(p: Path):
     p.parent.mkdir(parents=True, exist_ok=True)     # pastikan folder ada
@@ -164,13 +188,13 @@ EMP_COLS = {
 # =========================================
 # QUERY PARAMS & ROUTING
 # =========================================
+# --- Base URL juga aman tanpa secrets.toml
 def _base_prefix() -> str:
-    base = None
-    try:
-        base = st.secrets["APP_BASE_URL"]
-    except Exception:
-        base = os.environ.get("APP_BASE_URL") or os.environ.get("BASE_PREFIX") or "/"
+    base = os.environ.get("APP_BASE_URL") or os.environ.get("BASE_PREFIX")
+    if not base:
+        base = _get_secret("APP_BASE_URL", "/")  # ← aman
     return str(base).rstrip("/")
+
 
 def _flatten_qp(qp_raw: dict) -> dict:
     flat = {}
