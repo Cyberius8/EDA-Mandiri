@@ -257,6 +257,32 @@ with st.container():
 # HELPERS (formatting & link)
 # =========================================
 
+# ====== UPDATE DATA (Single .db) ======
+import tempfile, shutil
+from datetime import datetime
+
+def _sqlite_ok(db_path: str) -> tuple[bool, str]:
+    try:
+        with sqlite3.connect(db_path, timeout=10) as con:
+            cur = con.cursor()
+            cur.execute("PRAGMA integrity_check;")
+            res = cur.fetchone()
+            if not res:
+                return False, "Integrity check gagal: tidak ada hasil."
+            ok = (str(res[0]).strip().lower() == "ok")
+            return (True, "OK") if ok else (False, f"Integrity: {res[0]}")
+    except Exception as e:
+        return False, f"Gagal buka/cek SQLite: {e}"
+
+def _backup_db(src: Path) -> Path | None:
+    try:
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        dst = src.with_name(f"{src.stem}.bak-{ts}{src.suffix}")
+        shutil.copy2(src, dst)
+        return dst
+    except Exception:
+        return None
+
 def _find_col(df, candidates):
     low = {c.lower(): c for c in df.columns}
     for cand in candidates:
@@ -2531,48 +2557,115 @@ def page_rotasi_mutasi():
                 st.error(str(e))
 
 def page_update_data():
-    st.subheader("⬆️ Update Data")
-    st.markdown("Upload dua file berikut, lalu tekan **Simpan ke Database**:")
+    st.subheader("⬆️ Update Data — Ganti Database (.db)")
+
+    st.markdown(
+        """
+        Unggah **satu** file SQLite (`.db`) untuk menggantikan database saat ini.
+        Sistem akan:
+        1) Validasi file (`PRAGMA integrity_check`)
+        2) Backup file lama
+        3) Menimpa DB aktif
+        """
+    )
+
+    # Info DB saat ini
+    cur_exists = DB_PATH.exists()
+    cur_size   = DB_PATH.stat().st_size if cur_exists else 0
+    cur_mtime  = datetime.fromtimestamp(_db_mtime(str(DB_PATH))).strftime("%Y-%m-%d %H:%M:%S") if cur_exists else "—"
+    st.info(f"DB aktif: `{DB_PATH}` • Ukuran: {cur_size:,} bytes • Diubah: {cur_mtime}")
+
+    up = st.file_uploader("Pilih file .db (SQLite)", type=["db", "sqlite", "sqlite3"], accept_multiple_files=False)
+
+    colA, colB = st.columns([1,1])
+    with colA:
+        do_replace = st.button("💾 Ganti Database", use_container_width=True, type="primary", disabled=up is None)
+    with colB:
+        want_reload = st.button("🔄 Muat Ulang Data", use_container_width=True)
+
+    if want_reload:
+        # Paksa invalidasi cache → baca ulang tabel dari DB_PATH
+        st.cache_data.clear()
+        try:
+            globals()["df_branch"], globals()["df_employee"], globals()["BRANCH_UNIT_COL"], globals()["unit_map"] = load_data(str(DB_PATH))
+            st.success("Cache dibersihkan & data dimuat ulang.")
+        except Exception as e:
+            st.error(f"Gagal muat ulang: {e}")
+        st.stop()
+
+    if not do_replace:
+        st.stop()
+
+    if up is None:
+        st.warning("Silakan pilih file `.db` terlebih dahulu.")
+        st.stop()
+
+    # Simpan ke file sementara
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
+        tmp.write(up.read())
+        tmp_path = tmp.name
+
+    # Validasi SQLite
+    ok, msg = _sqlite_ok(tmp_path)
+    if not ok:
+        st.error(f"File tidak valid sebagai SQLite DB: {msg}")
+        try: os.unlink(tmp_path)
+        except Exception: pass
+        st.stop()
+
+    # (Opsional) cek tabel inti
+    must_have = {"branches", "employees"}
+    try:
+        with sqlite3.connect(tmp_path) as con:
+            cur = con.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = {r[0].lower() for r in cur.fetchall()}
+        missing = [t for t in must_have if t not in tables]
+        if missing:
+            st.warning(f"Tabel inti hilang: {', '.join(missing)} (lanjutkan jika memang tidak diperlukan).")
+    except Exception as e:
+        st.error(f"Gagal membaca struktur tabel: {e}")
+        st.stop()
+
+    # Backup DB lama
+    bpath = None
+    if DB_PATH.exists():
+        bpath = _backup_db(DB_PATH)
+        if bpath:
+            st.caption(f"Backup dibuat: `{bpath.name}`")
+
+    # Timpa DB aktif
+    try:
+        # Tutup koneksi & pastikan tidak terkunci
+        with _DB_WRITE_LOCK:
+            shutil.copy2(tmp_path, DB_PATH)
+        st.success("Database berhasil diganti.")
+    except Exception as e:
+        st.error(f"Gagal menimpa DB aktif: {e}")
+        st.stop()
+    finally:
+        try: os.unlink(tmp_path)
+        except Exception: pass
+
+    # Bersihkan cache & muat ulang data global
+    st.cache_data.clear()
+    try:
+        globals()["df_branch"], globals()["df_employee"], globals()["BRANCH_UNIT_COL"], globals()["unit_map"] = load_data(str(DB_PATH))
+        n_b = 0 if df_branch is None else len(df_branch)
+        n_e = 0 if df_employee is None else len(df_employee)
+        st.success(f"Reload sukses • branches: {n_b:,} • employees: {n_e:,}")
+    except Exception as e:
+        st.warning(f"DB terganti namun gagal load ulang: {e}")
+
+    # Tombol navigasi cepat
+    st.markdown("—")
     c1, c2 = st.columns(2)
     with c1:
-        up_branch = st.file_uploader("📄 File Branch (Branch Map R11.xlsx)", type=["xlsx"], key="up_branch")
+        if st.button("🏠 Ke Dashboard", use_container_width=True):
+            goto("dashboard")
     with c2:
-        up_employee = st.file_uploader("👥 File Pegawai (Data Pegawai.xlsx)", type=["xlsx"], key="up_employee")
-
-    if st.button("💾 Simpan ke Database", type="primary", use_container_width=True):
-        if not up_branch or not up_employee:
-            st.error("Mohon upload **kedua** file terlebih dahulu.")
-            return
-        try:
-            df_b_raw = pd.read_excel(up_branch)
-            df_e_raw = pd.read_excel(up_employee)
-        except Exception as e:
-            st.error(f"Gagal membaca Excel: {e}")
-            return
-
-        df_b = clean_dataframe_for_arrow(df_b_raw)
-        df_e = clean_dataframe_for_arrow(df_e_raw)
-
-        df_b = ensure_parsed_latlon(df_b)
-        if df_b.empty or "Latitude" not in df_b.columns or "Longitude" not in df_b.columns:
-            st.error("Kolom koordinat tidak valid. Pastikan ada 'Latitude_Longitude' (format 'lat,lon') atau kolom 'Latitude' & 'Longitude'.")
-            return
-
-        try:
-            replace_table(df_b, "branches")
-            replace_table(df_e, "employees")
-        except Exception as e:
-            st.error(f"Gagal menyimpan ke database: {e}")
-            return
-
-        # Clear caches terkait load & query params agar data baru kebaca
-        load_data.clear()
-        read_qp()  # warm
-        st.success("✅ Data berhasil disimpan ke database `bank_dashboard.db`.")
-        st.session_state["selected_unit"] = None
-        goto("map")
-
-
+        if st.button("🗺️ Distribution Branch", use_container_width=True):
+            goto("map")
 def page_dashboard():
     """Halaman ringkasan keseluruhan: KPI, chart, dan tabel jumlah pegawai per unit (filter Area)."""
     if df_branch.empty or df_employee.empty or BRANCH_UNIT_COL is None:
