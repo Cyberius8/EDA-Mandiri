@@ -111,7 +111,31 @@ hr {border: none; height:1px; background: linear-gradient(90deg, transparent, rg
 # =========================================
 # CONSTANTS & GLOBALS
 # =========================================
-DB_PATH = "C:/Users/Gede Darmawan/OneDrive/Documents/project/Data_Science/EDAMandiri/bank_dashboard.db"
+from pathlib import Path
+
+# 1) Ambil dari secrets/env kalau ada; kalau tidak, pakai ./data/bank_dashboard.db (relatif ke file ini)
+_DB_DEFAULT = Path(__file__).resolve().parent / "data" / "bank_dashboard.db"
+DB_PATH = Path(
+    os.environ.get("APP_DB_PATH")              # bisa set via env
+    or os.environ.get("BASE_DB_PATH")          # alias env lain (opsional)
+    or (st.secrets.get("DB_PATH", None) if hasattr(st, "secrets") else None)  # streamlit secrets
+    or _DB_DEFAULT
+)
+
+def _ensure_db_writable(p: Path):
+    p.parent.mkdir(parents=True, exist_ok=True)     # pastikan folder ada
+    # opsi: 'touch' membuat file kosong jika belum ada
+    if not p.exists():
+        p.touch()
+    # quick test open/close
+    import sqlite3
+    with sqlite3.connect(str(p)) as _:
+        pass
+
+# panggil segera setelah definisi DB_PATH
+_ensure_db_writable(DB_PATH)
+
+# DB_PATH = "C:/Users/Gede Darmawan/OneDrive/Documents/project/Data_Science/EDAMandiri/bank_dashboard.db"
 PLACEHOLDERS = {"-", "–", "—", "N/A", "NA", "n/a", "na", "", "None", "null", "Null"}
 ALLOWED_ROUTES = {"dashboard", "detail", "detailb", "detaile", "map", "rotasi","update"}
 OSRM_BASE = "https://router.project-osrm.org/route/v1/driving"
