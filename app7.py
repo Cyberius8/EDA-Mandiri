@@ -1040,8 +1040,38 @@ df_branch, df_employee, BRANCH_UNIT_COL, unit_map = load_data(DB_PATH)
 
 
 def replace_table(df: pd.DataFrame, table_name: str):
-    with sqlite3.connect(DB_PATH) as conn:
-        df.to_sql(table_name, conn, if_exists="replace", index=False)
+    if df is None or df.empty:
+        # Buat tabel kosong kalau perlu
+        with _DB_WRITE_LOCK:
+            with _conn() as conn:
+                df.head(0).to_sql(table_name, conn, if_exists="replace", index=False)
+        return
+
+    SQLITE_VARS_LIMIT = 999
+    ncols = max(1, len(df.columns))
+    # max baris per batch agar ncols * nrows <= SQLITE_VARS_LIMIT (beri margin 1)
+    rows_per_chunk = max(1, (SQLITE_VARS_LIMIT // ncols) - 1)
+
+    with _DB_WRITE_LOCK:
+        with _conn() as conn:
+            # Sedikit tuning biar lebih stabil saat tulis
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn.execute("PRAGMA temp_store=MEMORY;")
+
+            first = True
+            for start in range(0, len(df), rows_per_chunk):
+                chunk = df.iloc[start:start + rows_per_chunk]
+                chunk.to_sql(
+                    table_name,
+                    conn,
+                    if_exists="replace" if first else "append",
+                    index=False,
+                    # ⚠️ PENTING: jangan pakai method='multi' untuk SQLite limit ini
+                    method=None,
+                )
+                first = False
+
 
 # =========================================
 # PAGES
