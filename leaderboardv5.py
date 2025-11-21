@@ -145,7 +145,7 @@ def df_to_csv_bytes(df: pd.DataFrame):
 # ---------------------------
 # CSS & Logo adjustments (palet biru)
 # ---------------------------
-LOGO_PATH = "https://drive.google.com/uc?export=view&id=1auTE7u4P4zyBUoYdooUImnH74aVx6Tfc"
+LOGO_PATH = "https://github.com/Cyberius8/EDA-Mandiri/blob/main/R11GMM.jpg?raw=true"
 
 
 ENHANCED_CSS = rf"""
@@ -211,19 +211,18 @@ if "show_update_panel" not in st.session_state:
 st.markdown(ENHANCED_CSS, unsafe_allow_html=True)
 
 # Header with logo
-col1, col2, col3 = st.columns([1,4,3])
+col1, col3 = st.columns([3,3])
 with col1:
     st.markdown(f"""
     <div class='header-logo'>
       <img src='{LOGO_PATH}' class='logo-img'/>
       <div>
-        <div style='font-weight:800;font-size:18px'>GMM RACEBOARD</div>
+        <div style='font-weight:800;font-size:36px'>GMM RACEBOARD</div>
         <div class='small-muted'>Dashboard Leaderboard R11</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
-with col2:
-    st.write("")  # reserved
+
 with col3:
     if st.button("Leaderboard Cabang"):
         st.session_state.view = "cabang"
