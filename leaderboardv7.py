@@ -689,6 +689,14 @@ if st.session_state.show_update_panel:
                         conn.commit()
                         conn.close()
                         st.success(f"Import selesai. Insert/Replace: {inserted}. Cabang dibuat: {created}")
+                    if st.button("Hapus DB"):
+                        conn = sqlite3.connect(DB_PATH)
+                        cur = conn.cursor()
+                        cur.execute("DELETE FROM pegawai")
+                        cur.execute("DELETE FROM cabang")
+                        conn.commit()
+                        conn.close()
+                        st.success("Database dihapus.")
 
 # ---------------------------
 # Routing
