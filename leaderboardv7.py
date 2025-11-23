@@ -358,6 +358,31 @@ hr {{border: none; height:1px; background: linear-gradient(90deg, transparent, r
 .row-meta {{ display:flex; flex-direction:column; gap:4px; color:inherit; }}
 .row-meta .unit {{ font-weight:800; font-size:0.95rem; }}
 .row-meta .info {{ font-size:0.85rem; opacity:0.8; }}
+.row-meta .name {{
+  font-weight:800;
+  font-size:0.95rem;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color: #e6f2ff;
+}}
+
+.row-meta .small-muted {{
+  font-size:0.85rem;
+  opacity:0.85;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color: #bcd1e6;
+}}
+
+.row-right {{
+  flex:0 0 auto;
+  margin-left:12px;
+  text-align:right;
+  color:#e6f2ff;
+  font-weight:800;
+}}
 
 /* right side link */
 .detail-link {{
@@ -1001,38 +1026,18 @@ if st.session_state.view == "pegawai":
         st.markdown("---")
         # list view of page
         st.markdown("<h4>Daftar Pegawai</h4>", unsafe_allow_html=True)
-
-        def fmt_cif(x):
-            try:
-                return int(float(x))
-            except:
-                try:
-                    return int(x)
-                except:
-                    return x if x is not None and x != '' else "-"
-
-        def fmt_balance(x):
-            try:
-                return format_rp(x)  # pakai fungsi format_rp yang sudah ada
-            except:
-                try:
-                    v = float(x)
-                    return f"Rp {v:,.0f}".replace(",", ".")
-                except:
-                    return "-"
-
-        # optional: sort by balance desc agar ranking relevan
         dfp_sorted = dfp_page.sort_values('end_balance', ascending=False).reset_index(drop=True)
 
         for idx, (_, r) in enumerate(dfp_sorted.iterrows(), start=1):
-            kode_cb = r.get('kode_cabang') or ''
-            nama = r.get('nama') or '-'
-            nip = r.get('nip') or ''
-            cif = r.get('cif_akuisisi') or ''
-            cif_display = fmt_cif(cif) if cif != '' else '-'
-            end_balance = r.get('end_balance', 0)
 
-            # rank classes for top 3
+            kode_cb = r.get('kode_cabang', '')
+            nama = r.get('nama', '-')
+            nip = r.get('nip', '')
+            cif = r.get('cif_akuisisi', '-')
+            cif_display = (cif) if cif not in ['', None] else '-'
+            end_balance = format_rp(r.get('end_balance', 0))
+
+            # rank
             if idx == 1:
                 rank_cls = "top1"; medal = "🥇"; rank_label = "1"
             elif idx == 2:
@@ -1042,23 +1047,22 @@ if st.session_state.view == "pegawai":
             else:
                 rank_cls = ""; medal = ""; rank_label = str(idx)
 
+            # HTML TANPA INDENTASI (sangat penting!)
             row_html = f"""
-            <div class="row-card" role="listitem" aria-label="Pegawai {nama}">
-            <div class="row-left">
-                <div class="rank-badge {rank_cls}" aria-hidden="true">{medal} {rank_label}</div>
+        <div class="row-card">
+          <div class="row-left">
+            <div class="rank-badge {rank_cls}">{medal} {rank_label}</div>
+            <div class="row-meta">
+              <div class="name">{nama}</div>
+              <div class="small-muted">{nip} · CIF: {cif_display} · Cabang: {kode_cb}</div>
+            </div>
+          </div>
+          <div class="row-right">{end_balance}</div>
+        </div>
+        """
 
-                <div class="row-meta">
-                <div class="name">{nama}</div>
-                <div class="small-muted">{nip} · CIF: {cif_display} · Cabang: {kode_cb}</div>
-                </div>
-            </div>
-
-            <div class="row-right">
-                <div class="balance">{fmt_balance(end_balance)}</div>
-            </div>
-            </div>
-            """
             st.markdown(row_html, unsafe_allow_html=True)
+
 
 
         # pagination controls
