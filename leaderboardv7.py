@@ -794,6 +794,7 @@ if st.session_state.view == "cabang":
             rank_label = str(rank)
             medal = ""
 
+
         # build HTML card
         row_html = f"""
         <div class="row-card" role="listitem" aria-label="Cabang {unit}">
@@ -812,18 +813,6 @@ if st.session_state.view == "cabang":
         """
 
         st.markdown(row_html, unsafe_allow_html=True)
-
-
-
-    # charts
-    st.markdown("<hr style='border-color:rgba(255,255,255,0.04)'>", unsafe_allow_html=True)
-    df_area = df.groupby('area', dropna=False).agg({'total_balance':'sum'}).reset_index()
-    df_area = df_area.sort_values('total_balance', ascending=False)
-    if df_area['total_balance'].sum() > 0:
-        bar = alt.Chart(df_area).mark_bar().encode(x='total_balance:Q', y=alt.Y('area:N', sort='-x'), tooltip=['area','total_balance'])
-        st.altair_chart(bar, use_container_width=True)
-    else:
-        st.info("Belum ada data balance")
 
 # ---------------------------
 # Helper: render lineup pitch
@@ -1005,7 +994,7 @@ if st.session_state.view == "pegawai":
     kode = st.session_state.kode or "ALL"
     st.subheader(f"Leaderboard Pegawai — {kode}")
     dfc = get_cabang_leaderboard()
-    options = ["ALL"] + dfc['area'].dropna().unique().tolist() + dfc.apply(lambda r: f"{r['kode_cabang']} — {r['unit']}", axis=1).tolist()
+    options = ["ALL"] + dfc.apply(lambda r: f"{r['kode_cabang']} — {r['unit']}", axis=1).tolist()
 
     # tentukan default index
     if st.session_state.kode == "ALL":
@@ -1108,7 +1097,7 @@ if st.session_state.view == "pegawai":
         st.markdown("---")
         # list view of page
         st.markdown("<h4>Daftar Pegawai</h4>", unsafe_allow_html=True)
-        dfp_sorted = dfp_page.sort_values('end_balance', ascending=False).reset_index(drop=True)
+        dfp_sorted = dfp_page.sort_values(['cif_akuisisi', 'end_balance'], ascending=[False, False]).reset_index(drop=True)
 
         for idx, (_, r) in enumerate(dfp_sorted.iterrows(), start=1):
 
