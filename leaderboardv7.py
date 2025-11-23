@@ -421,6 +421,40 @@ hr {{border: none; height:1px; background: linear-gradient(90deg, transparent, r
   flex: 1 1 auto;   /* grow allowed, shrink allowed */
   min-width: 0;     /* important: allow children to shrink instead of pushing sibling */
 }}
+.stat-container {{
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+}}
+
+.stat-card {{
+    background: linear-gradient(135deg, #0F172A, #1E293B);
+    padding: 14px 18px;
+    border-radius: 14px;
+    min-width: 180px;
+    color: #e6eef8;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.28);
+    flex: 1;
+}}
+
+.stat-title {{
+    font-size: 0.85rem;
+    opacity: 0.75;
+    margin-bottom: 6px;
+}}
+
+.stat-value {{
+    font-size: 1.4rem;
+    font-weight: 800;
+    margin-bottom: 2px;
+}}
+
+.stat-extra {{
+    font-size: 0.85rem;
+    opacity: 0.5;
+}}
 
 /* kanan tidak menyusut (tetap terlihat) */
 .row-right {{
@@ -530,21 +564,11 @@ st.markdown(ENHANCED_CSS, unsafe_allow_html=True)
 # ---------------------------
 # Header with centered title & buttons below
 # ---------------------------
-st.markdown("""
-<style>
-.logo-img { height:48px; object-fit:contain; cursor:pointer; }
-.header-center { display:flex; align-items:center; gap:8px; }
-</style>
-""", unsafe_allow_html=True)
-
-# gunakan <a href> agar klik reload dengan query param
 st.markdown(f"""
-<div class='header-center'>
-  <a href='?show_update=1' title='Buka panel update'>
-    <img src="{LOGO_PATH}" class="logo-img" alt="logo" />
-  </a>
-</div>
-""", unsafe_allow_html=True)
+    <div class='header-center'>
+      <img src='{LOGO_PATH}' class='logo-img'/>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Layout: logo kiri — title center — (kosong kanan)
 col_l, col_c, col_r = st.columns([1,4,1])
@@ -558,7 +582,7 @@ with col_c:
     st.markdown(f"""
     <div class='header-center'>
       <div class='title-pill'>GMM RACEBOARD</div>
-      <div class='subtitle-small'>Dashboard Leaderboard R11</div>
+      <div class='subtitle-small'>22 November 2025</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -670,6 +694,7 @@ if st.session_state.show_update_panel:
 # Routing
 # ---------------------------
 params = st.query_params
+
 
 if "kode" in params:
     raw = params.get("kode")
@@ -989,7 +1014,7 @@ if st.session_state.view == "pegawai":
         else:
             default_index = 0
 
-    chosen = st.selectbox("Filter: ALL / Area / Cabang", options=options, index=default_index)
+    chosen = st.selectbox("Ketik Disini", options=options, index=default_index)
 
     if chosen == "ALL":
         st.session_state.kode = "ALL"
@@ -1000,6 +1025,21 @@ if st.session_state.view == "pegawai":
 
     # reload pegawai
     dfp_all = get_pegawai(st.session_state.kode)
+    total_pegawai = len(dfp_all)
+    total_balance = dfp_all["end_balance"].sum()
+    avg_balance = dfp_all["end_balance"].mean()
+    nihil = dfp_all["cif_akuisisi"].astype(float) == 0
+    nihil = nihil.sum()
+    total_cif = dfp_all["cif_akuisisi"].astype(float).sum()
+
+    # top performer
+    top_row = dfp_all.iloc[0]
+    top_name = top_row["nama"]
+    top_value = top_row["end_balance"]
+
+    # share top 3
+    top3_share = dfp_all["end_balance"].head(3).sum() / total_balance * 100
+
     if dfp_all.empty:
         st.warning("Tidak ada pegawai untuk filter ini.")
     else:
@@ -1018,6 +1058,40 @@ if st.session_state.view == "pegawai":
         # ambil daftar pegawai terurut dari DataFrame (urut menurut end_balance DESC)
         dfp_all = get_pegawai(st.session_state.kode)
         players = dfp_all.to_dict('records')  # urutan ranking
+        st.markdown(f"""
+        <div class="stat-container">
+            <div class="stat-card">
+                <div class="stat-title">Total Pegawai</div>
+                <div class="stat-value">{total_pegawai}</div>
+                <div class="stat-extra">Orang</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Mtd Nov</div>
+                <div class="stat-value">{format_rp(total_balance)}</div>
+                <div class="stat-extra">Akumulasi saldo seluruh pegawai</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Rata-rata Saldo</div>
+                <div class="stat-value">{format_rp(avg_balance)}</div>
+                <div class="stat-extra">Per pegawai</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Top Performer</div>
+                <div class="stat-value">{top_name}</div>
+                <div class="stat-extra">{format_rp(top_value)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Total CIF</div>
+                <div class="stat-value">{int(total_cif)}</div>
+                <div class="stat-extra">Jumlah CIF seluruh pegawai</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Pegawai Nihil Akuisisi</div>
+                <div class="stat-value">{nihil}</div>
+                <div class="stat-extra">Orang</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         html = render_futsal_responsive(players)
         import streamlit.components.v1 as components
