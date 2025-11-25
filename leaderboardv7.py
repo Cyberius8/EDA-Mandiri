@@ -589,7 +589,7 @@ with col_c:
     # Tombol dipindah ke bawah title
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    cbtn1, cbtn2= st.columns([1,1])
+    cbtn1, cbtn2,cbtn3= st.columns([1,1,1])
     with cbtn1:
         if st.button("Leaderboard Cabang"):
             st.session_state.view = "cabang"
@@ -604,10 +604,10 @@ with col_c:
             st.session_state.kode = "ALL"
             st.rerun()
 
-    # with cbtn3:
-    #     if st.button(""):
-    #         st.session_state.show_update_panel = not st.session_state.show_update_panel
-    #         st.rerun()
+    with cbtn3:
+        if st.button(""):
+            st.session_state.show_update_panel = not st.session_state.show_update_panel
+            st.rerun()
 
 
 # ---------------------------
@@ -1097,14 +1097,15 @@ if st.session_state.view == "pegawai":
         st.markdown("---")
         # list view of page
         st.markdown("<h4>Daftar Pegawai</h4>", unsafe_allow_html=True)
-        dfp_sorted = dfp_page.sort_values(['cif_akuisisi', 'end_balance'], ascending=[False, False]).reset_index(drop=True)
+        #urut berdasrkan end balance tapi takutnya ini berupa string
+        dfp_sorted = dfp_page.sort_values(['end_balance'], ascending=[False]).reset_index(drop=True)
 
         for idx, (_, r) in enumerate(dfp_sorted.iterrows(), start=1):
 
             kode_cb = r.get('kode_cabang', '')
             nama = r.get('nama', '-')
             nip = r.get('nip', '')
-            cif = r.get('cif_akuisisi', '-')
+            cif = r.get('cif_akuisisi', '')
             cif_display = (cif) if cif not in ['', None] else '-'
             end_balance = format_rp(r.get('end_balance', 0))
 
