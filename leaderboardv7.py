@@ -31,11 +31,8 @@ def init_db():
         kode_cabang TEXT,
         unit TEXT,
         cif_akuisisi REAL,
-        pct_akuisisi REAL,
         cif_setor REAL,
-        pct_setor_akuisisi REAL,
         cif_sudah_transaksi REAL,
-        pct_transaksi_setor REAL,
         frek_dari_cif_akuisisi REAL,
         sv_dari_cif_akuisisi_jt REAL,
         end_balance REAL,
@@ -77,7 +74,7 @@ def get_pegawai(kode):
     conn = sqlite3.connect(DB_PATH)
     if kode is None or kode == "ALL":
         df = pd.read_sql_query("""
-            SELECT nip, nama, kode_cabang, unit, cif_akuisisi, pct_akuisisi,
+            SELECT nip, nama, kode_cabang, unit, cif_akuisisi,
        cif_setor, cif_sudah_transaksi, frek_dari_cif_akuisisi,
        sv_dari_cif_akuisisi_jt, IFNULL(end_balance,0) AS end_balance,
        IFNULL(rata_rata,0) AS rata_rata, area, nama_cabang, posisi, avatar_url
@@ -90,7 +87,7 @@ def get_pegawai(kode):
         kode_list = df_cabang['kode_cabang'].tolist()
         if kode in kode_list:
             df = pd.read_sql_query("""
-                SELECT nip, nama, kode_cabang, unit, cif_akuisisi, pct_akuisisi,
+                SELECT nip, nama, kode_cabang, unit, cif_akuisisi,
        cif_setor, cif_sudah_transaksi, frek_dari_cif_akuisisi,
        sv_dari_cif_akuisisi_jt, IFNULL(end_balance,0) AS end_balance,
        IFNULL(rata_rata,0) AS rata_rata, area, nama_cabang, posisi, avatar_url
@@ -100,7 +97,7 @@ def get_pegawai(kode):
             """, conn, params=(kode,))
         else:
             q = """
-            SELECT nip, nama, kode_cabang, unit, cif_akuisisi, pct_akuisisi,
+            SELECT nip, nama, kode_cabang, unit, cif_akuisisi,
        cif_setor, cif_sudah_transaksi, frek_dari_cif_akuisisi,
        sv_dari_cif_akuisisi_jt, IFNULL(end_balance,0) AS end_balance,
        IFNULL(rata_rata,0) AS rata_rata, area, nama_cabang, posisi, avatar_url
@@ -660,11 +657,8 @@ if st.session_state.show_update_panel:
                     'kode_cabang': ['kode cabang','kode_cabang','kode','kodecabang'],
                     'unit': ['unit','nama cabang','nama_cabang','branch name','cabang'],
                     'cif_akuisisi': ['cif akuisisi','#cif akuisisi','cif_akuisisi','cif'],
-                    'pct_akuisisi': ['% akuisisi','pct akuisisi','persen akuisisi','%_akuisisi'],
                     'cif_setor': ['#cif setor (min 100rb)','cif_setor','cif setor','#cif_setor'],
-                    'pct_setor_akuisisi': ['% setor / akuisisi','% setor/ akuisisi','%setor/akuisisi'],
                     'cif_sudah_transaksi': ['# cif sudah transaksi','cif_sudah_transaksi'],
-                    'pct_transaksi_setor': ['% transaksi / setor','% transaksi/ setor','%transaksi/setor'],
                     'frek_dari_cif_akuisisi': ['frek dari cif yang diakuisisi','frek dari cif','frekuensi dari cif'],
                     'sv_dari_cif_akuisisi_jt': ['sv dari cif yang diakuisisi (jt)','sv dari cif','sv_cif_jt'],
                     'end_balance': ['end_balance','rata - rata saldo tabungan (jt)','end balance','end_balance (jt)'],
@@ -695,11 +689,8 @@ if st.session_state.show_update_panel:
                     df_ins['nama_cabang'] = df_raw[found['nama_cabang']].astype(str).str.strip() if 'nama_cabang' in found else ''
                     df_ins['posisi'] = df_raw[found['posisi']].astype(str).str.strip() if 'posisi' in found else ''
                     df_ins['cif_akuisisi'] = df_raw[found['cif_akuisisi']].astype(str).str.strip() if 'cif_akuisisi' in found else 0
-                    df_ins['pct_akuisisi'] = df_raw[found['pct_akuisisi']].astype(str).str.strip() if 'pct_akuisisi' in found else 0                             
                     df_ins['cif_setor'] = df_raw[found['cif_setor']].astype(str).str.strip() if 'cif_setor' in found else 0
-                    df_ins['pct_setor_akuisisi'] = df_raw[found['pct_setor_akuisisi']].astype(str).str.strip() if 'pct_setor_akuisisi' in found else 0
                     df_ins['cif_sudah_transaksi'] = df_raw[found['cif_sudah_transaksi']].astype(str).str.strip() if 'cif_sudah_transaksi' in found else 0
-                    df_ins['pct_transaksi_setor'] = df_raw[found['pct_transaksi_setor']].astype(str).str.strip() if 'pct_transaksi_setor' in found else 0
                     df_ins['frek_dari_cif_akuisisi'] = df_raw[found['frek_dari_cif_akuisisi']].astype(str).str.strip() if 'frek_dari_cif_akuisisi' in found else 0
                     df_ins['sv_dari_cif_akuisisi_jt'] = df_raw[found['sv_dari_cif_akuisisi_jt']].astype(str).str.strip() if 'sv_dari_cif_akuisisi_jt' in found else 0
                     df_ins['end_balance'] = df_raw[found['end_balance']].astype(str).str.strip() if 'end_balance' in found else 0
@@ -721,19 +712,15 @@ if st.session_state.show_update_panel:
                                     created += 1
                                 cur.execute("""
                                   INSERT OR REPLACE INTO pegawai
-                                  (nip, nama, kode_cabang, unit, cif_akuisisi, pct_akuisisi, cif_setor,
-                                  pct_setor_akuisisi, cif_sudah_transaksi, pct_transaksi_setor,
+                                  (nip, nama, kode_cabang, unit, cif_akuisisi, cif_setor,cif_sudah_transaksi,
                                   frek_dari_cif_akuisisi, sv_dari_cif_akuisisi_jt, end_balance, rata_rata,
                                   area, nama_cabang, posisi, avatar_url)
                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
                               """, (
                                   row['nip'], row['nama'], row['kode_cabang'], row['unit'],
                                   row.get('cif_akuisisi'),
-                                  row.get('pct_akuisisi'),
                                   row.get('cif_setor'),
-                                  row.get('pct_setor_akuisisi'),
                                   row.get('cif_sudah_transaksi'),
-                                  row.get('pct_transaksi_setor'),
                                   row.get('frek_dari_cif_akuisisi'),
                                   row.get('sv_dari_cif_akuisisi_jt'),
                                   row.get('end_balance'),
