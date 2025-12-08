@@ -601,7 +601,7 @@ with col_c:
     st.markdown(f"""
     <div class='header-center'>
       <div class='title-pill'>GMM RACEBOARD</div>
-      <div class='subtitle-small'>30 November 2025</div>
+      <div class='subtitle-small'>06 Desember 2025</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1217,6 +1217,7 @@ if st.session_state.view == "pegawai":
         st.session_state.page_num = 1
         st.query_params.clear()
         st.rerun()
+
 
 
 
