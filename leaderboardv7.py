@@ -21,8 +21,7 @@ def init_db():
         kode_cabang TEXT PRIMARY KEY,
         unit TEXT,
         area TEXT,
-        nama_cabang TEXT,
-        kelas_cabang TEXT
+        nama_cabang TEXT
     )
     """)
     cur.execute("""
@@ -57,7 +56,6 @@ def get_cabang_leaderboard():
         SELECT k.kode_cabang,
                COALESCE(c.unit, k.kode_cabang) AS unit,
                COALESCE(c.area, '(Unknown)') AS area,
-               COALESCE(c.kelas_cabang, '-') AS kelas_cabang,
                IFNULL(SUM(p.end_balance),0) AS total_balance,
                IFNULL(COUNT(p.nip),0) AS jumlah_pegawai,
                IFNULL(AVG(p.end_balance),0) AS rata_rata_saldo,
@@ -77,7 +75,7 @@ def get_cabang_leaderboard():
 
 def get_pegawai(kode):
     conn = sqlite3.connect(DB_PATH)
-    if kode is None or kode == "ALL" :
+    if kode is None or kode == "ALL":
         df = pd.read_sql_query("""
             SELECT nip, nama, kode_cabang, unit, cif_akuisisi, pct_akuisisi,
        cif_setor, cif_sudah_transaksi, frek_dari_cif_akuisisi,
@@ -86,17 +84,6 @@ def get_pegawai(kode):
             FROM pegawai
             ORDER BY end_balance DESC
         """, conn)
-    elif  len(kode) == 3:
-      q = """
-            SELECT nip, nama, kode_cabang, unit, cif_akuisisi, pct_akuisisi,
-       cif_setor, cif_sudah_transaksi, frek_dari_cif_akuisisi,
-       sv_dari_cif_akuisisi_jt, IFNULL(end_balance,0) AS end_balance,
-       IFNULL(rata_rata,0) AS rata_rata, area, nama_cabang, posisi, avatar_url
-            FROM pegawai
-            WHERE area = ?
-            ORDER BY end_balance DESC
-            """
-      df = pd.read_sql_query(q, conn, params=(kode,))
     else:
         # check existing kode_cabang
         df_cabang = pd.read_sql_query("SELECT kode_cabang FROM cabang", conn)
@@ -118,7 +105,7 @@ def get_pegawai(kode):
        sv_dari_cif_akuisisi_jt, IFNULL(end_balance,0) AS end_balance,
        IFNULL(rata_rata,0) AS rata_rata, area, nama_cabang, posisi, avatar_url
             FROM pegawai
-            WHERE area = ?
+            WHERE LOWER(area) = LOWER(?)
             ORDER BY end_balance DESC
             """
             df = pd.read_sql_query(q, conn, params=(kode,))
@@ -137,13 +124,7 @@ def format_rp(value):
         v = 0
     s = f"Rp {v:,}".replace(",", ".")
     return s + "jt"
-def format_pct(value):
-    try:
-        v = float(value)
-    except:
-        v = 0.0
-    s = f"{v:.2f}%"
-    return s
+
 
 import re
 
@@ -189,7 +170,6 @@ def df_to_csv_bytes(df: pd.DataFrame):
 LOGO_PATH = "https://github.com/Cyberius8/EDA-Mandiri/blob/main/R11GMM.jpg?raw=true"
 
 ENHANCED_CSS = rf"""
-
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
 :root{{
@@ -573,114 +553,7 @@ hr {{border: none; height:1px; background: linear-gradient(90deg, transparent, r
     opacity: 0.8;
     color: #cfd8e3;
 }}
-/* DETAIL PEGAWAI — COLORFUL CARDS */
-.detail-grid {{
-    display: grid;
-    grid-template-columns: repeat(3, 1fr); /* 3 kolom */
-    gap: 18px;
-    margin-top: 20px;
-}}
 
-/* Responsif untuk tablet */
-@media (max-width: 1100px) {{
-    .detail-grid {{
-        grid-template-columns: repeat(2, 1fr); /* 2 kolom */
-    }}
-}}
-
-/* Responsif untuk HP */
-@media (max-width: 700px) {{
-    .detail-grid {{
-        grid-template-columns: 1fr; /* 1 kolom */
-    }}
-}}
-
-
-.detail-card {{
-    padding: 20px;
-    border-radius: 18px;
-    color: #fff;
-    background: linear-gradient(135deg, rgba(32,51,160,0.85), rgba(72,12,168,0.90));
-    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-    border: 1px solid rgba(255,255,255,0.12);
-    backdrop-filter: blur(6px);
-    transition: transform .15s ease;
-}}
-
-.detail-card:hover {{
-    transform: translateY(-4px);
-}}
-
-.detail-title {{
-    font-size: 0.85rem;
-    opacity: 0.85;
-    font-weight: 700;
-}}
-
-.detail-value {{
-    font-size: 1.9rem;
-    font-weight: 800;
-    margin-top: 10px;
-}}
-
-.detail-icon {{
-    font-size: 1.4rem;
-    margin-bottom: 6px;
-    opacity: 0.9;
-}}
-
-/* LARGE FULL-WIDTH CARD */
-.detail-card-wide {{
-    grid-column: 1 / -1;
-    background: linear-gradient(135deg, #0088cc, #0066aa);
-    color: #fff;
-    padding: 22px;
-    border-radius: 18px;
-    box-shadow: 0 10px 28px rgba(0,0,0,0.35);
-    text-align: left;
-}}
-.detail-card-wide .detail-value {{
-    font-size: 2.2rem;
-}}
-
-/* EMPLOYEE ID BANNER */
-.emp-banner {{
-    background: linear-gradient(135deg, #1f2b52, #3f1f7a);
-    padding: 22px;
-    border-radius: 18px;
-    box-shadow: 0 8px 28px rgba(0,0,0,0.35);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 18px;
-    color: #fff;
-}}
-
-.emp-avatar {{
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #ffffff33, #ffffff11);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 32px;
-    font-weight: 900;
-    color: #fff;
-    border: 2px solid rgba(255,255,255,0.2);
-}}
-
-.emp-info-title {{
-    font-size: 1.4rem;
-    font-weight: 800;
-    line-height: 1.1;
-}}
-
-.emp-info-sub {{
-    opacity: 0.8;
-    font-size: 0.90rem;
-    margin-top: 4px;
-}}
 
 </style>
 """
@@ -728,14 +601,14 @@ with col_c:
     st.markdown(f"""
     <div class='header-center'>
       <div class='title-pill'>GMM RACEBOARD</div>
-      <div class='subtitle-small'>24 November 2025</div>
+      <div class='subtitle-small'>06 Desember 2025</div>
     </div>
     """, unsafe_allow_html=True)
 
     # Tombol dipindah ke bawah title
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    cbtn1, cbtn2,cbtn3 = st.columns([1,1,1])
+    cbtn1, cbtn2,cbtn3= st.columns([1,1,1])
     with cbtn1:
         if st.button("Leaderboard Cabang"):
             st.session_state.view = "cabang"
@@ -787,12 +660,11 @@ if st.session_state.show_update_panel:
                     'kode_cabang': ['kode cabang','kode_cabang','kode','kodecabang'],
                     'unit': ['unit','nama cabang','nama_cabang','branch name','cabang'],
                     'cif_akuisisi': ['cif akuisisi','#cif akuisisi','cif_akuisisi','cif'],
-                    'kelas_cabang': ['kelas cabang','kelas_cabang','kelas','class'],
-                    'pct_akuisisi': ['pct akuisisi','persen akuisisi','%_akuisisi'],
+                    'pct_akuisisi': ['% akuisisi','pct akuisisi','persen akuisisi','%_akuisisi'],
                     'cif_setor': ['#cif setor (min 100rb)','cif_setor','cif setor','#cif_setor'],
-                    'pct_setor_akuisisi': ['pct setor','% setor/ akuisisi','%setor/akuisisi'],
-                    'cif_sudah_transaksi': ['cif_sudah_transaksi'],
-                    'pct_transaksi_setor': ['pct transaksi','% transaksi/ setor','%transaksi/setor'],
+                    'pct_setor_akuisisi': ['% setor / akuisisi','% setor/ akuisisi','%setor/akuisisi'],
+                    'cif_sudah_transaksi': ['# cif sudah transaksi','cif_sudah_transaksi'],
+                    'pct_transaksi_setor': ['% transaksi / setor','% transaksi/ setor','%transaksi/setor'],
                     'frek_dari_cif_akuisisi': ['frek dari cif yang diakuisisi','frek dari cif','frekuensi dari cif'],
                     'sv_dari_cif_akuisisi_jt': ['sv dari cif yang diakuisisi (jt)','sv dari cif','sv_cif_jt'],
                     'end_balance': ['end_balance','rata - rata saldo tabungan (jt)','end balance','end_balance (jt)'],
@@ -820,7 +692,6 @@ if st.session_state.show_update_panel:
                     df_ins['kode_cabang'] = df_raw[found['kode_cabang']].astype(str).str.strip()
                     df_ins['unit'] = df_raw[found['unit']].astype(str).str.strip() if 'unit' in found else ''
                     df_ins['area'] = df_raw[found['area']].astype(str).str.strip() if 'area' in found else ''
-                    df_ins['kelas_cabang'] = df_raw[found['kelas_cabang']].astype(str).str.strip() if 'kelas_cabang' in found else ''
                     df_ins['nama_cabang'] = df_raw[found['nama_cabang']].astype(str).str.strip() if 'nama_cabang' in found else ''
                     df_ins['posisi'] = df_raw[found['posisi']].astype(str).str.strip() if 'posisi' in found else ''
                     df_ins['cif_akuisisi'] = df_raw[found['cif_akuisisi']].astype(str).str.strip() if 'cif_akuisisi' in found else 0
@@ -844,8 +715,8 @@ if st.session_state.show_update_panel:
                         for _, row in df_ins.iterrows():
                             try:
                                 if row['kode_cabang'] and row['kode_cabang'] not in existing_codes:
-                                    cur.execute("INSERT OR IGNORE INTO cabang (kode_cabang, unit, area, kelas_cabang) VALUES (?, ?, ?, ?)",
-                                                (row['kode_cabang'], row['unit'], row['area'], row['kelas_cabang']))
+                                    cur.execute("INSERT OR IGNORE INTO cabang (kode_cabang, unit, area) VALUES (?, ?, ?)",
+                                                (row['kode_cabang'], row['unit'], row['area']))
                                     existing_codes.add(row['kode_cabang'])
                                     created += 1
                                 cur.execute("""
@@ -901,11 +772,6 @@ if "kode" in params:
         kode_param = raw
     st.session_state.view = "pegawai"
     st.session_state.kode = str(kode_param).strip()
-# jika datang dari link detail pegawai
-if "view" in params:
-    raw_view = params.get("view")
-    view_param = raw_view[0] if isinstance(raw_view, list) else raw_view
-    st.session_state.view = view_param
 
 
 # ---------------------------
@@ -914,40 +780,9 @@ if "view" in params:
 # Python / Streamlit part (ganti loop lama dengan ini)
 if st.session_state.view == "cabang":
     df = get_cabang_leaderboard()
-
-    # ------------------------------
-    # Filter Area + Kelas Cabang
-    # ------------------------------
-
-    # 1. Buat opsi filter
-    area_options = ["All Area"] + sorted(df['area'].dropna().unique())
-    kelas_options = ["All Kelas"] + sorted(df['kelas_cabang'].dropna().unique())
-
-    # 2. Selectbox berdampingan
-    colA, colB = st.columns(2)
-
-    with colA:
-        area_filter = st.selectbox("Filter Area", options=area_options)
-
-    with colB:
-        kelas_filter = st.selectbox("Filter Kelas Cabang", options=kelas_options)
-
-    # 3. Apply filter
-    if area_filter != "All Area":
-        df = df[df['area'] == area_filter]
-
-    if kelas_filter != "All Kelas":
-        df = df[df['kelas_cabang'] == kelas_filter]
-
-    # 4. Hitung total balance setelah filter
     total_all = df['total_balance'].sum() if not df.empty else 0
-
-    # ------------------------------
-    # Render Top 3
-    # ------------------------------
     st.subheader("Top 3 Cabang")
     cols = st.columns(3)
-
 
     # medal tuples: (label, emoji, css-class)
     medals = [("Rank 1", "🥇", "gold"), ("Rank 2", "🥈", "silver"), ("Rank 3", "🥉", "bronze")]
@@ -1027,7 +862,7 @@ if st.session_state.view == "cabang":
                 <div class="rank-badge {rank_cls}" aria-hidden="true">{medal} {rank_label}</div>
                 <div class="row-meta">
                     <div class="unit">{unit}</div>
-                    <div class="info small-muted">Area: {area} • Kode: {kode_cb} • Kelas: {r['kelas_cabang']}</div>
+                    <div class="info small-muted">Area: {area} • Kode: {kode_cb}</div>
                     <div class="info small-muted">Total Balance: {fmt(total_balance)} &nbsp;|&nbsp; Total CIF: {total_cif}</div>
                 </div>
             </div>
@@ -1222,13 +1057,13 @@ if st.session_state.view == "pegawai":
     kode = st.session_state.kode or "ALL"
     st.subheader(f"Leaderboard Pegawai")
     dfc = get_cabang_leaderboard()
-    options = ["ALL"] + dfc['area'].dropna().unique().tolist() + dfc.apply(lambda r: f"{r['kode_cabang']} — {r['unit']}{' Non Cabang' if len(str(r['kode_cabang'])) == 3 else ''}",axis=1).tolist()
+    options = ["ALL"] + dfc.apply(lambda r: f"{r['kode_cabang']} — {r['unit']}", axis=1).tolist()
+
     # tentukan default index
     if st.session_state.kode == "ALL":
         default_index = 0
-    elif st.session_state.kode in dfc['area'].values:
-        default_index = options.index(st.session_state.kode)
     else:
+        # coba cari dalam list cabang
         cabang_label = None
         for r in dfc.itertuples():
             if st.session_state.kode == r.kode_cabang:
@@ -1347,24 +1182,18 @@ if st.session_state.view == "pegawai":
                 rank_cls = ""; medal = ""; rank_label = str(idx)
 
             # HTML TANPA INDENTASI (sangat penting!)
-            detail_link = f"?view=detail_pegawai&nip={nip}"
-
             row_html = f"""
-            <div class="row-card">
+              <div class="row-card">
                 <div class="row-left">
-                    <div class="rank-badge {rank_cls}">{medal} {rank_label}</div>
-                    <div class="row-meta">
-                        <div class="name">{nama}</div>
-                        <div class="small-muted">{nip} · {r.get('posisi','')} · {cif_display}</div>
-                    </div>
+                  <div class="rank-badge {rank_cls}">{medal} {rank_label}</div>
+                  <div class="row-meta">
+                    <div class="name">{nama}</div>
+                    <div class="small-muted">{nip} · {r.get('posisi','')} · {cif_display}</div>
+                  </div>
                 </div>
-                <div class="row-right">
-                    <a class="detail-link" href="{detail_link}">Detail</a>
-                    <div style="margin-top:6px; font-weight:800">{end_balance}</div>
-                </div>
-            </div>
-            """
-
+                <div class="row-right">{end_balance}</div>
+              </div>
+              """
 
             st.markdown(row_html, unsafe_allow_html=True)
 
@@ -1388,90 +1217,9 @@ if st.session_state.view == "pegawai":
         st.session_state.page_num = 1
         st.query_params.clear()
         st.rerun()
-# ---------------------------
-# View: Detail Pegawai
-# ---------------------------
-if st.session_state.view == "detail_pegawai":
-    # ambil NIP dari query params
-    params = st.query_params
-    raw_nip = params.get("nip")
-    if isinstance(raw_nip, list):
-        nip = raw_nip[0]
-    else:
-        nip = raw_nip
-
-    if not nip:
-        st.error("NIP tidak ditemukan di parameter.")
-    else:
-        conn = sqlite3.connect(DB_PATH)
-        df_detail = pd.read_sql_query("""
-            SELECT *
-            FROM pegawai
-            WHERE nip = ?
-        """, conn, params=(nip,))
-        conn.close()
-
-        if df_detail.empty:
-            st.error("Data pegawai tidak ditemukan.")
-        else:
-            r = df_detail.iloc[0]
-
-            st.subheader(f"Detail Pegawai — {r['nama']}")
-            # generate avatar initial (huruf pertama nama)
-            initial = r['nama'][0].upper() if r['nama'] else "?"
-
-            emp_banner = f"""
-            <div class="emp-banner">
-                <div class="emp-avatar">{initial}</div>
-                <div>
-                    <div class="emp-info-title">{r['nama']}</div>
-                    <div class="emp-info-sub">{r['nip']} · {r.get('posisi','')} · {r.get('unit','')}</div>
-                </div>
-            </div>
-            """
-
-            st.markdown(emp_banner, unsafe_allow_html=True)
 
 
-            detail_cards = [
-                ("📌", "CIF Akuisisi", int(r["cif_akuisisi"])),
-                ("📈", "% Akuisisi", format_pct(r["pct_akuisisi"]*100)),
-                ("💰", "CIF Setor", int(r["cif_setor"])),
-                ("🎯", "% Setor", format_pct(r["pct_setor_akuisisi"]*100)),
-                ("🔄", "CIF Transaksi", int(r["cif_sudah_transaksi"])),
-                ("📊", "% Transaksi", format_pct(r["pct_transaksi_setor"]*100)),
-                ("⏱️", "Frek Dari CIF", int(r["frek_dari_cif_akuisisi"])),
-                ("💎", "SV CIF (jt)", format_rp(r["sv_dari_cif_akuisisi_jt"])),
-                ("🏦", "End Balance", format_rp(r["end_balance"])),
-            ]
-
-            html_cards = "<div class='detail-grid'>"
-
-            for icon, title, val in detail_cards:
-                html_cards += (
-                    f"<div class='detail-card'>"
-                    f"<div class='detail-icon'>{icon}</div>"
-                    f"<div class='detail-title'>{title}</div>"
-                    f"<div class='detail-value'>{val}</div>"
-                    f"</div>"
-                )
-
-            html_cards += "</div>"
-
-            st.markdown(html_cards, unsafe_allow_html=True)
 
 
-            # card lebar rata-rata
-            st.markdown(f"""
-            <div class="detail-grid">
-            <div class="detail-card-wide">
-              <div class="detail-title">Rata-Rata Saldo</div>
-              <div class="detail-value">{format_rp(r['rata_rata'])}</div>
-            </div>
-            </div>
-            """, unsafe_allow_html=True)
 
-            if st.button("← Kembali ke Leaderboard Pegawai"):
-                st.session_state.view = "pegawai"
-                st.query_params.clear()
-                st.rerun()
+
