@@ -608,7 +608,7 @@ with col_c:
     # Tombol dipindah ke bawah title
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    cbtn1, cbtn2, cbtn3= st.columns([1,1,1])
+    cbtn1, cbtn2= st.columns([1,1])
     with cbtn1:
         if st.button("Leaderboard Cabang"):
             st.session_state.view = "cabang"
@@ -623,10 +623,10 @@ with col_c:
             st.session_state.kode = "ALL"
             st.rerun()
 
-    with cbtn3:
-        if st.button(""):
-            st.session_state.show_update_panel = not st.session_state.show_update_panel
-            st.rerun()
+    # with cbtn3:
+    #     if st.button(""):
+    #         st.session_state.show_update_panel = not st.session_state.show_update_panel
+    #         st.rerun()
 
 
 # ---------------------------
@@ -1217,6 +1217,7 @@ if st.session_state.view == "pegawai":
         st.session_state.page_num = 1
         st.query_params.clear()
         st.rerun()
+
 
 
 
