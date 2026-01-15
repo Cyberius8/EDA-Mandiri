@@ -1125,7 +1125,7 @@ if st.session_state.view == "pegawai":
                 <div class="stat-extra">Orang</div>
             </div>
             <div class="stat-card">
-                <div class="stat-title">Mtd Nov</div>
+                <div class="stat-title">Mtd</div>
                 <div class="stat-value">{format_rp(total_balance)}</div>
                 <div class="stat-extra">Akumulasi saldo seluruh pegawai</div>
             </div>
@@ -1217,6 +1217,7 @@ if st.session_state.view == "pegawai":
         st.session_state.page_num = 1
         st.query_params.clear()
         st.rerun()
+
 
 
 
