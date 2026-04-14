@@ -51,10 +51,10 @@ KAT_CONFIG = {
         "fmt": fmt_rp
     },
     "MERCHANT": {
-        "score_col": "total_referral_livin",
-        "score_label": "Referral Livin",
-        "sec_col": "total_referral_edc",
-        "sec_label": "Referral EDC",
+        "score_col": "total_referral_edc",
+        "score_label": "Referral EDC",
+        "sec_col": "total_referral_livin",
+        "sec_label": "Referral Livin",
         "fmt": fmt_num
     },
     "TRANSAKSI": {
