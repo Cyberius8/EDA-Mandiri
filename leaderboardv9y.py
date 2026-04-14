@@ -262,12 +262,12 @@ body, .stApp {{ font-family: 'Inter', sans-serif; background: linear-gradient(18
 
 init_db()
 
-if "view" not in st.session_state: st.session_state.view = "cabang"
+if "view" not in st.session_state: st.session_state.view = "home"
 if "kode" not in st.session_state: st.session_state.kode = None
 if "page_num" not in st.session_state: st.session_state.page_num = 1
 if "is_admin" not in st.session_state: st.session_state.is_admin = False
 if "show_update_panel" not in st.session_state: st.session_state.show_update_panel = False
-if "kategori" not in st.session_state: st.session_state.kategori = "LIVIN"
+if "kategori" not in st.session_state: st.session_state.kategori = "HOME"
 
 st.markdown(ENHANCED_CSS, unsafe_allow_html=True)
 
@@ -277,18 +277,21 @@ st.markdown(ENHANCED_CSS, unsafe_allow_html=True)
 st.markdown(f"<div class='header-center'><img src='{LOGO_PATH}' class='logo-img'/></div>", unsafe_allow_html=True)
 st.markdown("""
 <div class='header-center' style='margin-top: 12px;'>
-  <div class='title-pill'>GMM RACEBOARD</div>
-  <div class='subtitle-small' style='margin-top: 8px;'>24 November 2025</div>
+  <div class='title-pill'>GMM RACEBOARD V2</div>
+  <div class='subtitle-small' style='margin-top: 8px;'>14 April 2026</div>
 </div><br>
 """, unsafe_allow_html=True)
 
 # Pilihan Kategori (Responsive di HP otomatis jadi Stack / Tumpuk)
-k1, k2, k3 = st.columns(3)
-if k1.button("📱 LIVIN", use_container_width=True): st.session_state.kategori = "LIVIN"
-if k2.button("🏪 MERCHANT", use_container_width=True): st.session_state.kategori = "MERCHANT"
-if k3.button("💳 TRANSAKSI", use_container_width=True): st.session_state.kategori = "TRANSAKSI"
+k1, k2 = st.columns(2)
+k3, k4 = st.columns(2)
+if k1.button("🏠 HOME", use_container_width=True): st.session_state.kategori = "HOME"; st.rerun()
+if k2.button("📱 LIVIN", use_container_width=True): st.session_state.kategori = "LIVIN"; st.rerun()
+if k3.button("🏪 MERCHANT", use_container_width=True): st.session_state.kategori = "MERCHANT"; st.rerun()
+if k4.button("💳 TRANSAKSI", use_container_width=True): st.session_state.kategori = "TRANSAKSI"; st.rerun()
 
 st.markdown(f"<div style='text-align:center; color:var(--accent); font-weight:bold; margin-bottom:15px;'>Kategori Aktif: {st.session_state.kategori}</div>", unsafe_allow_html=True)
+
 
 # Tombol Menu
 cbtn1, cbtn2, cbtn3 = st.columns([1,1,1])
@@ -433,9 +436,108 @@ if "view" in params:
     st.session_state.view = str(params.get("view"))
 
 kategori_aktif = st.session_state.kategori
-fmt_fungsi = KAT_CONFIG[kategori_aktif]["fmt"]
-label_utama = KAT_CONFIG[kategori_aktif]["score_label"]
-label_kedua = KAT_CONFIG[kategori_aktif]["sec_label"]
+if kategori_aktif != "HOME":
+    fmt_fungsi = KAT_CONFIG[kategori_aktif]["fmt"]
+    label_utama = KAT_CONFIG[kategori_aktif]["score_label"]
+    label_kedua = KAT_CONFIG[kategori_aktif]["sec_label"]
+
+
+# ---------------------------
+# View: HOME (Dashboard Top & Worst)
+# ---------------------------
+if st.session_state.kategori == "HOME" and st.session_state.view not in ["detail_pegawai"]:
+    st.subheader("🏠 Dashboard Summary")
+    st.markdown("<p class='small-muted' style='margin-bottom: 16px;'>Top 3 dan Bottom 3 performa Cabang & Pegawai di semua kategori.</p>", unsafe_allow_html=True)
+    
+    kats = ["LIVIN", "MERCHANT", "TRANSAKSI"]
+    
+    # Fungsi helper untuk render card mini (BUG FIXED: Spasi dihilangkan agar tidak terbaca sebagai Code Block)
+    def render_mini_list(title, df_list, name_col, sub_col, score_col, fmt_fn, is_worst=False):
+        badge_bg = "linear-gradient(135deg, #ff4b4b, #b30000)" if is_worst else "linear-gradient(135deg,#26c57a,#00a060)"
+        icon = "📉" if is_worst else "🏆"
+        html = f"<div style='margin-bottom: 20px; background: rgba(255,255,255,0.02); padding: 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.04); box-shadow: 0 4px 12px rgba(0,0,0,0.2);'>"
+        html += f"<h5 style='margin-bottom:12px; font-size: 1rem; color: #fff;'>{icon} {title}</h5>"
+        
+        if df_list.empty:
+            return html + "<div class='small-muted'>Data belum tersedia.</div></div>"
+            
+        for idx, r in enumerate(df_list.to_dict('records')):
+            val = fmt_fn(r[score_col])
+            name = r[name_col]
+            sub = r.get(sub_col, '-')
+            
+            # Penggabungan tag HTML ini ditulis rapat ke kiri tanpa newline panjang agar tidak terbaca sebagai <pre> code
+            html += f"<div class='row-card' style='padding: 10px; margin-bottom: 8px; border-radius: 10px;'>"
+            html += f"<div class='row-left'>"
+            html += f"<div class='rank-badge' style='background:{badge_bg}; color:white; width:34px; height:34px; font-size:14px;'>{idx+1}</div>"
+            html += f"<div class='row-meta'>"
+            html += f"<div class='unit' style='font-size:0.9rem;'>{name}</div>"
+            html += f"<div class='small-muted' style='font-size:0.75rem;'>{sub}</div>"
+            html += f"</div></div>"
+            html += f"<div class='row-right' style='font-size:0.9rem; color:var(--accent);'>{val}</div>"
+            html += f"</div>"
+            
+        html += "</div>"
+        return html
+
+    # Loop setiap kategori secara vertikal
+    for kat in kats:
+        st.markdown(f"<h3 style='color: var(--accent); margin-top: 30px;'>📊 KATEGORI {kat}</h3>", unsafe_allow_html=True)
+        
+        df_c = get_cabang_leaderboard(kat)
+        df_p = get_pegawai("ALL", kat)
+        fmt_fn = KAT_CONFIG[kat]["fmt"]
+        
+        # Filter hilangkan angka 0 untuk Worst agar lebih akurat
+        df_c_active = df_c[df_c['total_balance'] > 0] if not df_c.empty else df_c
+        df_p_active = df_p[df_p['end_balance'] > 0] if not df_p.empty else df_p
+        
+        # Ambil Top 3 dan Bottom 3
+        top_c = df_c.head(3)
+        bot_c = df_c_active.tail(3).iloc[::-1] if not df_c_active.empty else df_c.tail(3).iloc[::-1]
+        
+        top_p = df_p.head(3)
+        bot_p = df_p_active.tail(3).iloc[::-1] if not df_p_active.empty else df_p.tail(3).iloc[::-1]
+        
+        # Render 2 Kolom untuk Cabang
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(render_mini_list(f"Top 3 Cabang {kat}", top_c, "unit", "area", "total_balance", fmt_fn, False), unsafe_allow_html=True)
+        with c2:
+            st.markdown(render_mini_list(f"Bot 3 Cabang {kat}", bot_c, "unit", "area", "total_balance", fmt_fn, True), unsafe_allow_html=True)
+            
+        # Render 2 Kolom untuk Pegawai
+        p1, p2 = st.columns(2)
+        with p1:
+            st.markdown(render_mini_list(f"Top 3 Pegawai {kat}", top_p, "nama", "unit", "end_balance", fmt_fn, False), unsafe_allow_html=True)
+        with p2:
+            st.markdown(render_mini_list(f"Bot 3 Pegawai {kat}", bot_p, "nama", "unit", "end_balance", fmt_fn, True), unsafe_allow_html=True)
+
+        # -----------------------------
+        # GENERATE KESIMPULAN OTOMATIS
+        # -----------------------------
+        if not top_c.empty and not top_p.empty:
+            best_c = top_c.iloc[0]['unit']
+            best_c_val = fmt_fn(top_c.iloc[0]['total_balance'])
+            best_p = top_p.iloc[0]['nama']
+            best_p_val = fmt_fn(top_p.iloc[0]['end_balance'])
+            
+            worst_c_text = ""
+            if not bot_c.empty:
+                worst_c = bot_c.iloc[0]['unit']
+                worst_c_val = fmt_fn(bot_c.iloc[0]['total_balance'])
+                worst_c_text = f" Di sisi lain, <b>{worst_c}</b> menjadi cabang dengan performa terendah yang aktif ({worst_c_val}) dan perlu mendapat dorongan serta evaluasi lebih lanjut."
+
+            kesimpulan_html = f"""
+            <div style='background: rgba(31, 182, 255, 0.08); border-left: 4px solid var(--accent); padding: 16px; border-radius: 8px; margin-top: 4px; font-size: 0.95rem; line-height: 1.6;'>
+                <b>💡 Insight & Kesimpulan {kat}:</b><br>
+                Secara keseluruhan, kontribusi tertinggi dicetak oleh <b>{best_c}</b> dengan total <b>{best_c_val}</b>. Dari sisi pencapaian individu, <b>{best_p}</b> menduduki peringkat teratas sebagai top performer dengan perolehan <b>{best_p_val}</b>.{worst_c_text}
+            </div>
+            """
+            st.markdown(kesimpulan_html, unsafe_allow_html=True)
+        
+        # Garis pembatas antar kategori
+        st.markdown("<hr style='border-color: rgba(255,255,255,0.06); margin: 40px 0;'>", unsafe_allow_html=True)
 
 # ---------------------------
 # View: Cabang
@@ -703,7 +805,7 @@ if st.session_state.view == "pegawai":
         if b3.button("➡️", use_container_width=True) and st.session_state.page_num < total_pages: st.session_state.page_num += 1; st.rerun()
 
 # ---------------------------
-# View: Detail Pegawai
+# View: Detail Pegawai (Profil Terpadu)
 # ---------------------------
 if st.session_state.view == "detail_pegawai":
     nip = params.get("nip", [""])[0] if isinstance(params.get("nip"), list) else params.get("nip")
@@ -712,13 +814,29 @@ if st.session_state.view == "detail_pegawai":
     else:
         conn = sqlite3.connect(DB_PATH)
         df_detail = pd.read_sql_query("SELECT * FROM pegawai WHERE nip = ?", conn, params=(nip,))
-        conn.close()
-
-        if df_detail.empty: st.error("Data pegawai tidak ditemukan.")
+        
+        if df_detail.empty: 
+            st.error("Data pegawai tidak ditemukan.")
+            conn.close()
         else:
             r = df_detail.iloc[0]
-            st.subheader(f"Profil Pegawai")
             
+            # --- Fungsi untuk Menghitung Peringkat Global ---
+            def get_global_rank(col_name, score):
+                cur = conn.cursor()
+                # Peringkat = jumlah orang yang skornya lebih besar + 1
+                cur.execute(f"SELECT COUNT(*) + 1 FROM pegawai WHERE {col_name} > ?", (score,))
+                return cur.fetchone()[0]
+
+            rank_livin = get_global_rank("end_balance", r["end_balance"])
+            rank_merchant = get_global_rank("total_referral_livin", r["total_referral_livin"])
+            rank_transaksi = get_global_rank("total_poin_transaksi", r["total_poin_transaksi"])
+            
+            conn.close()
+
+            st.subheader(f"Profil Lengkap Pegawai")
+            
+            # Banner Profil
             emp_banner = f"""
             <div class="emp-banner">
                 <div class="emp-avatar">{r['nama'][0].upper() if r['nama'] else "?"}</div>
@@ -732,35 +850,49 @@ if st.session_state.view == "detail_pegawai":
             """
             st.markdown(emp_banner, unsafe_allow_html=True)
 
-            if kategori_aktif == "LIVIN":
-                cards = [
-                    ("🏦", "End Balance", fmt_rp(r["end_balance"])),
-                    ("📌", "CIF Akuisisi", fmt_num(r["cif_akuisisi"])),
-                    ("💰", "CIF Setor", fmt_num(r["cif_setor"])),
-                    ("🔄", "CIF Transaksi", fmt_num(r["cif_sudah_transaksi"])),
-                    ("⏱️", "Frek Dari CIF", fmt_num(r["frek_dari_cif_akuisisi"])),
-                    ("📊", "Rata-rata", fmt_rp(r["rata_rata"]))
-                ]
-            elif kategori_aktif == "MERCHANT":
-                cards = [
-                    ("🏪", "Referral Livin", fmt_num(r["total_referral_livin"])),
-                    ("💳", "Referral EDC", fmt_num(r["total_referral_edc"]))
-                ]
-            else: # TRANSAKSI
-                cards = [
-                    ("📈", "Total Poin", fmt_num(r["total_poin_transaksi"])),
-                    ("🛡️", "Poin On Us", fmt_num(r["poin_on_us"])),
-                    ("🌐", "Poin Off Us", fmt_num(r["poin_off_us"]))
-                ]
+            # --- Section LIVIN ---
+            st.markdown(f"<h4 style='color:var(--accent); margin-top:24px; font-size: 1.1rem;'>📱 LIVIN <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_livin}</span></h4>", unsafe_allow_html=True)
+            cards_livin = [
+                ("🏦", "End Balance", fmt_rp(r["end_balance"])),
+                ("📌", "CIF Akuisisi", fmt_num(r["cif_akuisisi"])),
+                ("💰", "CIF Setor", fmt_num(r["cif_setor"])),
+                ("🔄", "CIF Transaksi", fmt_num(r["cif_sudah_transaksi"])),
+                ("⏱️", "Frek Dari CIF", fmt_num(r["frek_dari_cif_akuisisi"])),
+                ("📊", "Rata-rata", fmt_rp(r["rata_rata"]))
+            ]
+            html_livin = "<div class='detail-grid'>"
+            for icon, title, val in cards_livin:
+                html_livin += f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>"
+            html_livin += "</div>"
+            st.markdown(html_livin, unsafe_allow_html=True)
 
-            html_cards = "<div class='detail-grid'>"
-            for icon, title, val in cards:
-                html_cards += f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>"
-            html_cards += "</div>"
+            # --- Section MERCHANT ---
+            st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>🏪 MERCHANT <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_merchant}</span></h4>", unsafe_allow_html=True)
+            cards_merchant = [
+                ("🏪", "Referral Livin", fmt_num(r["total_referral_livin"])),
+                ("💳", "Referral EDC", fmt_num(r["total_referral_edc"]))
+            ]
+            html_merchant = "<div class='detail-grid'>"
+            for icon, title, val in cards_merchant:
+                html_merchant += f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>"
+            html_merchant += "</div>"
+            st.markdown(html_merchant, unsafe_allow_html=True)
+
+            # --- Section TRANSAKSI ---
+            st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_transaksi}</span></h4>", unsafe_allow_html=True)
+            cards_transaksi = [
+                ("📈", "Total Poin", fmt_num(r["total_poin_transaksi"])),
+                ("🛡️", "Poin On Us", fmt_num(r["poin_on_us"])),
+                ("🌐", "Poin Off Us", fmt_num(r["poin_off_us"]))
+            ]
+            html_transaksi = "<div class='detail-grid'>"
+            for icon, title, val in cards_transaksi:
+                html_transaksi += f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>"
+            html_transaksi += "</div>"
+            st.markdown(html_transaksi, unsafe_allow_html=True)
             
-            st.markdown(html_cards, unsafe_allow_html=True)
-            
-            st.markdown("<br>", unsafe_allow_html=True)
+            # Tombol Kembali
+            st.markdown("<br><hr style='border-color:rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
             if st.button("⬅️ Kembali ke Daftar Pegawai", use_container_width=True):
                 st.session_state.view = "pegawai"
                 st.query_params.clear()
