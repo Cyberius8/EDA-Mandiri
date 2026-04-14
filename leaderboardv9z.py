@@ -267,8 +267,6 @@ body, .stApp {{ font-family: 'Inter', sans-serif; background: linear-gradient(18
 .emp-avatar {{ width: 64px; height: 64px; flex-shrink: 0; border-radius: 50%; background: linear-gradient(135deg, #ffffff33, #ffffff11); display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 900; color: #fff; border: 2px solid rgba(255,255,255,0.2); }}
 .emp-info-title {{ font-size: 1.2rem; font-weight: 800; line-height: 1.2; }}
 
-
-
 /* Penyesuaian Ekstrem untuk Layar HP Kecil (Mobile) */
 @media (max-width: 600px) {{
     .logo-img {{ width: 140px; height: 140px; }}
@@ -363,34 +361,39 @@ if not st.session_state.logged_in:
             
             if submit_btn:
                 nip_clean = nip_input.strip()
-                if nip_clean.lower() == "admin123": 
-                    v_count, l_visit = get_visit_stats("ADMIN")
+                
+                # Fetch nama from DB first
+                conn = sqlite3.connect(DB_PATH)
+                cur = conn.cursor()
+                cur.execute("SELECT nama FROM pegawai WHERE nip = ?", (nip_clean,))
+                user_data = cur.fetchone()
+                conn.close()
+                
+                # Cek Admin (Menggunakan NIP Admin Spesifik atau Admin123)
+                if nip_clean == "2502844731" or nip_clean.lower() == "admin123":
+                    nama_admin = user_data[0] if user_data else "Administrator"
+                    v_count, l_visit = get_visit_stats(nip_clean)
                     st.session_state.logged_in = True
-                    st.session_state.current_user_nip = "ADMIN"
-                    st.session_state.current_user_nama = "Administrator"
+                    st.session_state.current_user_nip = nip_clean
+                    st.session_state.current_user_nama = nama_admin
                     st.session_state.is_admin = True
                     st.session_state.visit_count = v_count
                     st.session_state.last_visit = l_visit
-                    log_visitor("ADMIN", "Administrator")
+                    log_visitor(nip_clean, nama_admin)
+                    st.rerun()
+                # Cek User Biasa
+                elif user_data:
+                    v_count, l_visit = get_visit_stats(nip_clean)
+                    st.session_state.logged_in = True
+                    st.session_state.current_user_nip = nip_clean
+                    st.session_state.current_user_nama = user_data[0]
+                    st.session_state.is_admin = False
+                    st.session_state.visit_count = v_count
+                    st.session_state.last_visit = l_visit
+                    log_visitor(nip_clean, user_data[0])
                     st.rerun()
                 else:
-                    conn = sqlite3.connect(DB_PATH)
-                    cur = conn.cursor()
-                    cur.execute("SELECT nama FROM pegawai WHERE nip = ?", (nip_clean,))
-                    user_data = cur.fetchone()
-                    conn.close()
-                    
-                    if user_data:
-                        v_count, l_visit = get_visit_stats(nip_clean)
-                        st.session_state.logged_in = True
-                        st.session_state.current_user_nip = nip_clean
-                        st.session_state.current_user_nama = user_data[0]
-                        st.session_state.visit_count = v_count
-                        st.session_state.last_visit = l_visit
-                        log_visitor(nip_clean, user_data[0])
-                        st.rerun()
-                    else:
-                        st.error("❌ NIP tidak ditemukan! Pastikan Anda sudah terdaftar di database.")
+                    st.error("❌ NIP tidak ditemukan!")
     st.stop()
 
 # ---------------------------
@@ -435,7 +438,15 @@ if k4.button("💳 TRANSAKSI", use_container_width=True, type="primary" if st.se
     st.session_state.view = "cabang" 
     st.rerun()
 
-cbtn1, cbtn2, cbtn3, cbtn4 = st.columns([1,1,1,1])
+# ---------------------------
+# Dynamic Action Menu (Admin vs User)
+# ---------------------------
+if getattr(st.session_state, "is_admin", False):
+    cbtn1, cbtn2, cbtn3, cbtn4 = st.columns([1,1,1,1])
+else:
+    cbtn1, cbtn2, cbtn4 = st.columns([1,1,1])
+    cbtn3 = None
+
 btn_cabang_type = "primary" if st.session_state.view == "cabang" else "secondary"
 if cbtn1.button("🏢 Leaderboard Cabang", use_container_width=True, type=btn_cabang_type):
     st.session_state.view = "cabang"
@@ -453,8 +464,10 @@ if cbtn2.button("👨‍💼 Leaderboard Pegawai", use_container_width=True, typ
         st.session_state.kategori = "LIVIN"
     st.rerun()
     
-if cbtn3.button("⚙️ Admin Panel", use_container_width=True):
-    st.session_state.show_update_panel = not st.session_state.show_update_panel; st.rerun()
+if cbtn3 is not None:
+    if cbtn3.button("⚙️ Admin Panel", use_container_width=True):
+        st.session_state.show_update_panel = not st.session_state.show_update_panel
+        st.rerun()
     
 if cbtn4.button("🚪 Logout", help="Keluar/Logout", use_container_width=True):
     st.session_state.clear()
@@ -463,44 +476,140 @@ if cbtn4.button("🚪 Logout", help="Keluar/Logout", use_container_width=True):
 # ---------------------------
 # Admin Panel
 # ---------------------------
-if st.session_state.show_update_panel:
+if st.session_state.show_update_panel and st.session_state.get("is_admin", False):
     st.markdown("<hr style='border-color:rgba(255,255,255,0.04)'>", unsafe_allow_html=True)
     with st.expander("Admin Panel", expanded=True):
-        if not st.session_state.is_admin:
-            pwd = st.text_input("Password admin", type="password")
-            if st.button("Unlock"):
-                if pwd == os.environ.get("ADMIN_PASSWORD", "changeme123"):
-                    st.session_state.is_admin = True
-                    st.success("Admin unlocked")
-                    st.rerun()
-                else:
-                    st.error("Password salah.")
+        # --- FITUR BARU: LOG AKSES & REKAP ---
+        st.markdown("#### 📊 Rekapitulasi Pengunjung")
+        conn = sqlite3.connect(DB_PATH)
+        
+        # Tabel Rekap (Siapa paling sering akses)
+        df_summary = pd.read_sql_query("""
+            SELECT 
+                nip AS NIP, 
+                nama AS Nama, 
+                COUNT(*) AS 'Total Kunjungan', 
+                MAX(waktu) AS 'Kunjungan Terakhir' 
+            FROM access_log 
+            GROUP BY nip, nama 
+            ORDER BY 'Total Kunjungan' DESC
+        """, conn)
+        st.dataframe(df_summary, use_container_width=True, hide_index=True)
+        
+        # Tabel Log Mentah (100 log terakhir)
+        st.markdown("#### 🕵️ 100 Riwayat Akses Terakhir")
+        df_log = pd.read_sql_query("SELECT waktu, nip, nama, ip_address FROM access_log ORDER BY id DESC LIMIT 100", conn)
+        st.dataframe(df_log, use_container_width=True, hide_index=True)
+        
+        conn.close()
+        st.markdown("<hr>", unsafe_allow_html=True)
+
+        upload_file = st.file_uploader("Upload Excel (.xlsx/.xls) - Berisi sheet GMM LIVIN, GMM MERCHANT, GMM TRANSAKSI", type=['xlsx','xls'])
+        if upload_file:
+            try:
+                xls = pd.read_excel(upload_file, sheet_name=None, dtype=str)
+                st.success(f"Berhasil membaca {len(xls)} sheet: {', '.join(xls.keys())}")
+                
+                if st.button("Mulai Import Semua Sheet"):
+                    conn = sqlite3.connect(DB_PATH)
+                    cur = conn.cursor()
                     
-        if st.session_state.is_admin:
-            # --- FITUR BARU: LOG AKSES & REKAP ---
-            st.markdown("#### 📊 Rekapitulasi Pengunjung")
+                    master_data = {}
+                    
+                    def find_col(df, aliases):
+                        lc_cols = [str(c).lower().strip() for c in df.columns]
+                        for a in aliases:
+                            if a.lower() in lc_cols: return df.columns[lc_cols.index(a.lower())]
+                        return None
+
+                    # 1. Sheet LIVIN
+                    if "GMM LIVIN" in xls:
+                        df_l = xls["GMM LIVIN"]
+                        c_nip = find_col(df_l, ['nip'])
+                        c_nama = find_col(df_l, ['nama','employee name'])
+                        c_kode = find_col(df_l, ['kode cabang','kode_cabang'])
+                        if c_nip and c_nama:
+                            for _, r in df_l.iterrows():
+                                nip = str(r[c_nip]).strip()
+                                if nip == 'nan' or not nip: continue
+                                master_data[nip] = {
+                                    'nip': nip, 'nama': str(r[c_nama]).strip(),
+                                    'kode_cabang': str(r[c_kode]).strip() if c_kode else '',
+                                    'unit': str(r[find_col(df_l, ['nama cabang','unit'])]).strip() if find_col(df_l, ['nama cabang','unit']) else '',
+                                    'area': str(r[find_col(df_l, ['area','wilayah'])]).strip() if find_col(df_l, ['area','wilayah']) else '',
+                                    'kelas_cabang': str(r[find_col(df_l, ['kelas cabang','kelas'])]).strip() if find_col(df_l, ['kelas cabang','kelas']) else '',
+                                    'posisi': str(r[find_col(df_l, ['posisi','unit kerja'])]).strip() if find_col(df_l, ['posisi','unit kerja']) else '',
+                                    'cif_akuisisi': normalize_val(r[find_col(df_l, ['cif akuisisi','cif'])]),
+                                    'cif_setor': normalize_val(r[find_col(df_l, ['cif setor'])]),
+                                    'end_balance': normalize_val(r[find_col(df_l, ['end_balance','end balance'])]),
+                                    'rata_rata': normalize_val(r[find_col(df_l, ['rata-rata','rata rata'])]),
+                                    'cif_sudah_transaksi': normalize_val(r[find_col(df_l, ['cif_sudah_transaksi','cif sudah transaksi'])]),
+                                }
+
+                    # 2. Sheet MERCHANT
+                    if "GMM MERCHANT" in xls:
+                        df_m = xls["GMM MERCHANT"]
+                        c_nip = find_col(df_m, ['nip'])
+                        if c_nip:
+                            for _, r in df_m.iterrows():
+                                nip = str(r[c_nip]).strip()
+                                if nip == 'nan' or not nip: continue
+                                if nip not in master_data:
+                                    master_data[nip] = {'nip': nip, 'nama': str(r[find_col(df_m, ['nama pegawai','nama'])]).strip()}
+                                master_data[nip]['total_referral_livin'] = normalize_val(r[find_col(df_m, ['total referral livin'])])
+                                master_data[nip]['total_referral_edc'] = normalize_val(r[find_col(df_m, ['total referral edc'])])
+
+                    # 3. Sheet TRANSAKSI
+                    if "GMM TRANSAKSI" in xls:
+                        df_t = xls["GMM TRANSAKSI"]
+                        c_nip = find_col(df_t, ['nip'])
+                        if c_nip:
+                            for _, r in df_t.iterrows():
+                                nip = str(r[c_nip]).strip()
+                                if nip == 'nan' or not nip: continue
+                                if nip not in master_data:
+                                    master_data[nip] = {'nip': nip, 'nama': str(r[find_col(df_t, ['nama pegawai','nama'])]).strip()}
+                                master_data[nip]['total_poin_transaksi'] = normalize_val(r[find_col(df_t, ['total poin transaksi'])])
+                                master_data[nip]['poin_on_us'] = normalize_val(r[find_col(df_t, ['poin on us'])])
+                                master_data[nip]['poin_off_us'] = normalize_val(r[find_col(df_t, ['poin off us'])])
+
+                    inserted = 0
+                    for nip, d in master_data.items():
+                        d.setdefault('kode_cabang', ''); d.setdefault('unit', ''); d.setdefault('area', ''); d.setdefault('kelas_cabang', '')
+                        d.setdefault('end_balance', 0); d.setdefault('cif_akuisisi', 0); d.setdefault('cif_setor', 0)
+                        d.setdefault('cif_sudah_transaksi', 0); d.setdefault('rata_rata', 0)
+                        d.setdefault('total_referral_livin', 0); d.setdefault('total_referral_edc', 0)
+                        d.setdefault('total_poin_transaksi', 0); d.setdefault('poin_on_us', 0); d.setdefault('poin_off_us', 0)
+
+                        if d['kode_cabang']:
+                            cur.execute("INSERT OR IGNORE INTO cabang (kode_cabang, unit, area, kelas_cabang) VALUES (?, ?, ?, ?)",
+                                        (d['kode_cabang'], d.get('unit'), d.get('area'), d.get('kelas_cabang')))
+                        
+                        cur.execute("""
+                            INSERT OR REPLACE INTO pegawai 
+                            (nip, nama, kode_cabang, unit, area, posisi, end_balance, cif_akuisisi, cif_setor, cif_sudah_transaksi, rata_rata,
+                             total_referral_livin, total_referral_edc, total_poin_transaksi, poin_on_us, poin_off_us)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (d['nip'], d['nama'], d['kode_cabang'], d.get('unit'), d.get('area'), d.get('posisi',''), 
+                              d['end_balance'], d['cif_akuisisi'], d['cif_setor'], d['cif_sudah_transaksi'], d['rata_rata'],
+                              d['total_referral_livin'], d['total_referral_edc'], d['total_poin_transaksi'], d['poin_on_us'], d['poin_off_us']))
+                        inserted += 1
+
+                    conn.commit()
+                    conn.close()
+                    st.success(f"Import selesai! Berhasil update {inserted} data pegawai gabungan.")
+
+            except Exception as e:
+                st.error(f"Gagal memproses file: {e}")
+
+        if st.button("⚠️ Hapus Seluruh Database"):
             conn = sqlite3.connect(DB_PATH)
-            
-            # Tabel Rekap (Siapa paling sering akses)
-            df_summary = pd.read_sql_query("""
-                SELECT 
-                    nip AS NIP, 
-                    nama AS Nama, 
-                    COUNT(*) AS 'Total Kunjungan', 
-                    MAX(waktu) AS 'Kunjungan Terakhir' 
-                FROM access_log 
-                GROUP BY nip, nama 
-                ORDER BY 'Total Kunjungan' DESC
-            """, conn)
-            st.dataframe(df_summary, use_container_width=True, hide_index=True)
-            
-            # Tabel Log Mentah (100 log terakhir)
-            st.markdown("#### 🕵️ 100 Riwayat Akses Terakhir")
-            df_log = pd.read_sql_query("SELECT waktu, nip, nama, ip_address FROM access_log ORDER BY id DESC LIMIT 100", conn)
-            st.dataframe(df_log, use_container_width=True, hide_index=True)
-            
+            cur = conn.cursor()
+            cur.execute("DELETE FROM pegawai")
+            cur.execute("DELETE FROM cabang")
+            conn.commit()
             conn.close()
-            st.markdown("<hr>", unsafe_allow_html=True)
+            st.success("Database berhasil dikosongkan.")
 
 kategori_aktif = st.session_state.kategori
 if kategori_aktif != "HOME":
@@ -675,7 +784,6 @@ if st.session_state.view == "cabang":
 # View: Pegawai & Futsal Pitch
 # ---------------------------
 def render_futsal_responsive(players, fmt_fn):
-    # Kode Futsal sama (saya pangkas untuk keringkasan layout, tapi biarkan fungsinya berjalan seperti aslinya)
     import html as _html
     pl = list(players) if players is not None else []
     def esc(x, default='-'):
