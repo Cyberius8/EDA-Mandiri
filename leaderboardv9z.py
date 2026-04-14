@@ -661,8 +661,8 @@ if st.session_state.kategori == "HOME" and st.session_state.view not in ["detail
         df_p = get_pegawai("ALL", kat)
         fmt_fn = KAT_CONFIG[kat]["fmt"]
         
-        df_c_active = df_c[df_c['total_balance'] > 0] if not df_c.empty else df_c
-        df_p_active = df_p[df_p['end_balance'] > 0] if not df_p.empty else df_p
+        df_c_active = df_c
+        df_p_active = df_p
         
         if not df_c_active.empty:
             df_c_bot_filtered = df_c_active[df_c_active['kelas_cabang'] != "A/R"]
