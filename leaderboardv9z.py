@@ -330,7 +330,8 @@ def log_visitor(nip, nama):
         
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    tz = pytz.timezone("Asia/Makassar")  # GMT+8 (WITA)
+    waktu_sekarang = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute("INSERT INTO access_log (waktu, nip, nama, ip_address) VALUES (?, ?, ?, ?)", 
                 (waktu_sekarang, nip, nama, ip_address))
     conn.commit()
