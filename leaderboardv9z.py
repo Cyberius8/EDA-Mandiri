@@ -7,7 +7,6 @@ import os
 import math
 import re
 from datetime import datetime
-import pytz
 
 # 1. WAJIB DI ATAS: Konfigurasi Page Streamlit untuk Mobile
 st.set_page_config(
@@ -331,12 +330,7 @@ def log_visitor(nip, nama):
         
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    from datetime import datetime
-
-    tz = pytz.timezone("Asia/Makassar")  # GMT+8 (WITA)
-    waktu_sekarang = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-
-    print(waktu_sekarang)
+    waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur.execute("INSERT INTO access_log (waktu, nip, nama, ip_address) VALUES (?, ?, ?, ?)", 
                 (waktu_sekarang, nip, nama, ip_address))
     conn.commit()
