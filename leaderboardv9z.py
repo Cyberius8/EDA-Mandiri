@@ -729,7 +729,7 @@ if st.session_state.view == "cabang":
         # --- POSISI TOMBOL DI KANAN ---
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown(f"<div class='small-muted' style='padding-left:12px;'>{label_kedua}: <span style='color:white;font-weight:bold;'>{fmt_num(r['total_cif'])}</span> • {share_pct:0.1f}% Total</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='small-muted' style='padding-left:12px;'>{label_kedua}: <span style='color:white;font-weight:bold;'>{fmt_num(r['total_cif'])}</span></div>", unsafe_allow_html=True)
         with col2:
             if st.button(f"Detail ➔", key=f"btn_top_{r['kode_cabang']}", use_container_width=True):
                 st.session_state.view = "pegawai"
@@ -763,7 +763,7 @@ if st.session_state.view == "cabang":
                 <div class="row-meta">
                     <div class="unit">{unit}</div>
                     <div class="info small-muted">Area: {area} • Kode: {kode_cb}</div>
-                    <div class="info small-muted">{label_utama}: <span style="color:white;font-weight:bold;">{fmt_fungsi(total_balance)}</span></div>
+                    <div class="info small-muted">{label_utama}: <span style="color:white;font-weight:bold;">{fmt_fungsi(total_balance)}</span>&nbsp;|&nbsp;{label_kedua}:<span style="color:white;font-weight:bold;">{fmt_fungsi(total_cif)}</span></div>
                 </div>
             </div>
             """
@@ -950,7 +950,7 @@ if st.session_state.view == "pegawai":
                     <div class="row-meta">
                         <div class="name">{nama}</div>
                         <div class="small-muted">{nip} · {posisi}</div>
-                        <div style="font-size:0.9rem; font-weight:800; color:var(--accent);">{end_bal}</div>
+                                            <div class="info small-muted">{label_utama}: <span style="color:white;font-weight:bold;">{end_bal}</span>&nbsp;|&nbsp;{label_kedua}:<span style="color:white;font-weight:bold;">{cif_display}</span></div>
                     </div>
                 </div>
                 """
