@@ -55,7 +55,7 @@ KAT_CONFIG = {
         "score_col": "total_referral_edc",
         "score_label": "Referral EDC",
         "sec_col": "total_referral_livin",
-        "sec_label": "Referral Livin Merchant",
+        "sec_label": "Referral Livin",
         "fmt": fmt_num
     },
     "TRANSAKSI": {
@@ -331,8 +331,12 @@ def log_visitor(nip, nama):
         
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+    from datetime import datetime
+
     tz = pytz.timezone("Asia/Makassar")  # GMT+8 (WITA)
     waktu_sekarang = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+
+    print(waktu_sekarang)
     cur.execute("INSERT INTO access_log (waktu, nip, nama, ip_address) VALUES (?, ?, ?, ?)", 
                 (waktu_sekarang, nip, nama, ip_address))
     conn.commit()
@@ -558,9 +562,8 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                                 if nip == 'nan' or not nip: continue
                                 if nip not in master_data:
                                     master_data[nip] = {'nip': nip, 'nama': str(r[find_col(df_m, ['nama pegawai','nama'])]).strip()}
-                                master_data[nip]['total_referral_edc'] = normalize_val(r[find_col(df_m, ['total referral edc'])])
                                 master_data[nip]['total_referral_livin'] = normalize_val(r[find_col(df_m, ['total referral livin'])])
-                                
+                                master_data[nip]['total_referral_edc'] = normalize_val(r[find_col(df_m, ['total referral edc'])])
 
                     # 3. Sheet TRANSAKSI
                     if "GMM TRANSAKSI" in xls:
@@ -1032,9 +1035,8 @@ if st.session_state.view == "detail_pegawai":
 
             st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>🏪 MERCHANT <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_merchant}</span></h4>", unsafe_allow_html=True)
             cards_merchant = [
-                ("💳", "Referral EDC", fmt_num(r["total_referral_edc"])),
-                ("🏪", "Referral Livin Merchant", fmt_num(r["total_referral_livin"]))
-                
+                ("🏪", "Referral Livin", fmt_num(r["total_referral_livin"])),
+                ("💳", "Referral EDC", fmt_num(r["total_referral_edc"]))
             ]
             html_merchant = "<div class='detail-grid'>"
             for icon, title, val in cards_merchant: html_merchant += f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>"
