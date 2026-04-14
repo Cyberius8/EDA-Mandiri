@@ -1,0 +1,727 @@
+# /mnt/data/leaderboardv4.py
+import sqlite3
+import pandas as pd
+import streamlit as st
+import io
+import os
+import math
+import re
+
+DB_PATH = "ycc_leaderboard.db"
+
+# ---------------------------
+# Config Kategori KPI
+# ---------------------------
+def fmt_rp(value):
+    try:
+        v = int(round(float(value)))
+        return f"Rp {v:,}".replace(",", ".") + "jt"
+    except:
+        return "Rp 0jt"
+
+def fmt_num(value):
+    try:
+        v = int(round(float(value)))
+        return f"{v:,}".replace(",", ".")
+    except:
+        return "0"
+
+def fmt_pct(value):
+    try:
+        v = float(value)
+        return f"{v:.2f}%"
+    except:
+        return "0.00%"
+
+KAT_CONFIG = {
+    "LIVIN": {
+        "score_col": "end_balance",
+        "score_label": "End Balance",
+        "sec_col": "cif_akuisisi",
+        "sec_label": "CIF Akuisisi",
+        "fmt": fmt_rp
+    },
+    "MERCHANT": {
+        "score_col": "total_referral_livin",
+        "score_label": "Referral Livin",
+        "sec_col": "total_referral_edc",
+        "sec_label": "Referral EDC",
+        "fmt": fmt_num
+    },
+    "TRANSAKSI": {
+        "score_col": "total_poin_transaksi",
+        "score_label": "Total Poin",
+        "sec_col": "poin_on_us",
+        "sec_label": "Poin On Us",
+        "fmt": fmt_num
+    }
+}
+
+# ---------------------------
+# Init DB & queries
+# ---------------------------
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS cabang (
+        kode_cabang TEXT PRIMARY KEY,
+        unit TEXT,
+        area TEXT,
+        nama_cabang TEXT,
+        kelas_cabang TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pegawai (
+        nip TEXT PRIMARY KEY,
+        nama TEXT,
+        kode_cabang TEXT,
+        unit TEXT,
+        cif_akuisisi REAL,
+        pct_akuisisi REAL,
+        cif_setor REAL,
+        pct_setor_akuisisi REAL,
+        cif_sudah_transaksi REAL,
+        pct_transaksi_setor REAL,
+        frek_dari_cif_akuisisi REAL,
+        sv_dari_cif_akuisisi_jt REAL,
+        end_balance REAL,
+        rata_rata REAL,
+        area TEXT,
+        nama_cabang TEXT,
+        posisi TEXT,
+        avatar_url TEXT,
+        FOREIGN KEY (kode_cabang) REFERENCES cabang(kode_cabang)
+    )
+    """)
+    
+    # Auto-migrate columns for new categories if they don't exist
+    new_cols = [
+        ("total_referral_livin", "REAL DEFAULT 0"),
+        ("total_referral_edc", "REAL DEFAULT 0"),
+        ("total_poin_transaksi", "REAL DEFAULT 0"),
+        ("poin_on_us", "REAL DEFAULT 0"),
+        ("poin_off_us", "REAL DEFAULT 0")
+    ]
+    cur.execute("PRAGMA table_info(pegawai)")
+    existing_cols = [row[1] for row in cur.fetchall()]
+    
+    for col_name, col_type in new_cols:
+        if col_name not in existing_cols:
+            cur.execute(f"ALTER TABLE pegawai ADD COLUMN {col_name} {col_type}")
+
+    conn.commit()
+    conn.close()
+
+def get_cabang_leaderboard(kategori="LIVIN"):
+    conf = KAT_CONFIG[kategori]
+    sc = conf["score_col"]
+    se = conf["sec_col"]
+
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql_query(f"""
+        SELECT k.kode_cabang,
+               COALESCE(c.unit, k.kode_cabang) AS unit,
+               COALESCE(c.area, '(Unknown)') AS area,
+               COALESCE(c.kelas_cabang, '-') AS kelas_cabang,
+               IFNULL(SUM(p.{sc}),0) AS total_balance,
+               IFNULL(COUNT(p.nip),0) AS jumlah_pegawai,
+               IFNULL(AVG(p.{sc}),0) AS rata_rata_saldo,
+               IFNULL(SUM(p.{se}),0) AS total_cif
+        FROM (
+          SELECT kode_cabang FROM cabang
+          UNION
+          SELECT DISTINCT kode_cabang FROM pegawai
+        ) k
+        LEFT JOIN cabang c ON k.kode_cabang = c.kode_cabang
+        LEFT JOIN pegawai p ON k.kode_cabang = p.kode_cabang
+        GROUP BY k.kode_cabang
+        ORDER BY total_balance DESC
+    """, conn)
+    conn.close()
+    return df
+
+def get_pegawai(kode, kategori="LIVIN"):
+    conf = KAT_CONFIG[kategori]
+    sc = conf["score_col"]
+    se = conf["sec_col"]
+
+    conn = sqlite3.connect(DB_PATH)
+    base_query = f"""
+        SELECT nip, nama, kode_cabang, unit, 
+               IFNULL({sc},0) AS end_balance, 
+               IFNULL({se},0) AS cif_akuisisi, 
+               posisi, area, nama_cabang, avatar_url
+        FROM pegawai
+    """
+    
+    if kode is None or kode == "ALL":
+        df = pd.read_sql_query(base_query + " ORDER BY end_balance DESC", conn)
+    elif len(kode) == 3:
+        df = pd.read_sql_query(base_query + " WHERE area = ? ORDER BY end_balance DESC", conn, params=(kode,))
+    else:
+        df_cabang = pd.read_sql_query("SELECT kode_cabang FROM cabang", conn)
+        if kode in df_cabang['kode_cabang'].tolist():
+            df = pd.read_sql_query(base_query + " WHERE kode_cabang = ? ORDER BY end_balance DESC", conn, params=(kode,))
+        else:
+            df = pd.read_sql_query(base_query + " WHERE area = ? ORDER BY end_balance DESC", conn, params=(kode,))
+    conn.close()
+    return df
+
+def normalize_val(x):
+    if pd.isna(x) or x is None: return 0
+    s = str(x).strip().replace(',', '.')
+    s = re.sub(r'[^\d\.-]', '', s)
+    try: return float(s)
+    except: return 0
+
+# ---------------------------
+# CSS & Init
+# ---------------------------
+LOGO_PATH = "https://github.com/Cyberius8/EDA-Mandiri/blob/main/R11GMM.jpg?raw=true"
+ENHANCED_CSS = rf"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+:root{{ --bg1: #061526; --bg2: #0b2b46; --accent: #1fb6ff; --text: rgba(255,255,255,0.96); --muted: rgba(255,255,255,0.72); }}
+body, .stApp {{ font-family: 'Inter', sans-serif; background: linear-gradient(180deg,var(--bg1),var(--bg2)) !important; color: var(--text) !important; }}
+.header-center {{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; flex:1; }}
+.logo-img {{ width:256px;height:256px;border-radius:12px;object-fit:cover;border:2px solid rgba(255,255,255,0.06);box-shadow:0 10px 28px rgba(0,0,0,0.6); }}
+.title-pill {{ background: rgba(255,255,255,1); color: #041827; padding:14px 28px; border-radius:28px; font-weight:800; font-size:28px; box-shadow: 0 12px 30px rgba(0,0,0,0.35); display:inline-block; border: 4px solid rgba(0,0,0,0.06); }}
+.subtitle-small {{ color:var(--muted); font-weight:600; font-size:13px; }}
+.leaderboard-card {{ background: linear-gradient(135deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.04); color: #e6eef8; }}
+.medal {{ font-weight:700; font-size:0.85rem; padding:6px 10px; border-radius:12px; display:inline-block; margin-bottom:6px; box-shadow: 0 4px 10px rgba(2,6,23,0.12); }}
+.medal.gold {{ background: linear-gradient(135deg, #FFD700 0%, #FFC107 60%); color: #111; }}
+.medal.silver {{ background: linear-gradient(135deg, #e9eef2 0%, #cfd8dc 60%); color: #111; }}
+.medal.bronze {{ background: linear-gradient(135deg, #cd7f32 0%, #b4692b 60%); color: #111; }}
+.row-card {{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius: 12px; padding: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 6px 18px rgba(2,6,23,0.25); border: 1px solid rgba(255,255,255,0.03); }}
+.row-left {{ display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; }}
+.rank-badge {{ width: 48px; height: 48px; border-radius: 14px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }}
+.rank-badge.top1 {{ background: linear-gradient(135deg,#FFD700,#FFC107); color:#3A2C00; }}
+.rank-badge.top2 {{ background: linear-gradient(135deg,#cfcfcf,#bfc4c8); color:#3A3A3A; }}
+.rank-badge.top3 {{ background: linear-gradient(135deg,#cd7f32,#b4692b); color:#3C2500; }}
+.row-meta {{ display:flex; flex-direction:column; gap:4px; min-width:0; }}
+.row-meta .unit, .row-meta .name {{ font-weight:800; font-size:0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color: #e6f2ff; }}
+.small-muted {{ font-size:0.85rem; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color: #bcd1e6; }}
+.row-right {{ flex: 0 0 auto; margin-left: 12px; text-align:right; color:#e6f2ff; font-weight:800; }}
+.detail-link {{ display:inline-block; padding:8px 12px; border-radius:10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color:var(--accent); text-decoration:none; font-weight:700; }}
+.stat-container {{ display: flex; gap: 16px; margin-top: 10px; margin-bottom: 18px; flex-wrap: wrap; }}
+.stat-card {{ background: linear-gradient(135deg, #0F172A, #1E293B); padding: 14px 18px; border-radius: 14px; min-width: 180px; color: #e6eef8; box-shadow: 0 4px 12px rgba(0,0,0,0.28); flex: 1; }}
+.stat-title {{ font-size: 0.85rem; opacity: 0.75; margin-bottom: 6px; }}
+.stat-value {{ font-size: 1.4rem; font-weight: 800; margin-bottom: 2px; }}
+.stat-extra {{ font-size: 0.85rem; opacity: 0.5; }}
+.detail-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 20px; }}
+@media (max-width: 700px) {{ .detail-grid {{ grid-template-columns: 1fr; }} }}
+.detail-card {{ padding: 20px; border-radius: 18px; color: #fff; background: linear-gradient(135deg, rgba(32,51,160,0.85), rgba(72,12,168,0.90)); box-shadow: 0 10px 30px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.12); }}
+.detail-title {{ font-size: 0.85rem; opacity: 0.85; font-weight: 700; }}
+.detail-value {{ font-size: 1.9rem; font-weight: 800; margin-top: 10px; }}
+.detail-icon {{ font-size: 1.4rem; margin-bottom: 6px; opacity: 0.9; }}
+.emp-banner {{ background: linear-gradient(135deg, #1f2b52, #3f1f7a); padding: 22px; border-radius: 18px; box-shadow: 0 8px 28px rgba(0,0,0,0.35); margin-bottom: 16px; display: flex; align-items: center; gap: 18px; color: #fff; }}
+.emp-avatar {{ width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, #ffffff33, #ffffff11); display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 900; color: #fff; border: 2px solid rgba(255,255,255,0.2); }}
+.emp-info-title {{ font-size: 1.4rem; font-weight: 800; line-height: 1.1; }}
+</style>
+"""
+
+init_db()
+
+if "view" not in st.session_state: st.session_state.view = "cabang"
+if "kode" not in st.session_state: st.session_state.kode = None
+if "page_num" not in st.session_state: st.session_state.page_num = 1
+if "is_admin" not in st.session_state: st.session_state.is_admin = False
+if "show_update_panel" not in st.session_state: st.session_state.show_update_panel = False
+if "kategori" not in st.session_state: st.session_state.kategori = "LIVIN"
+
+st.markdown(ENHANCED_CSS, unsafe_allow_html=True)
+
+# ---------------------------
+# Header & Navigasi
+# ---------------------------
+st.markdown(f"<div class='header-center'><img src='{LOGO_PATH}' class='logo-img'/></div>", unsafe_allow_html=True)
+col_l, col_c, col_r = st.columns([1,4,1])
+with col_c:
+    st.markdown("""
+    <div class='header-center'>
+      <div class='title-pill'>GMM RACEBOARD</div>
+      <div class='subtitle-small'>14 April 2026</div>
+    </div><br>
+    """, unsafe_allow_html=True)
+
+# Pilihan Kategori (LIVIN / MERCHANT / TRANSAKSI)
+k1, k2, k3 = st.columns(3)
+if k1.button("🟢 LIVIN", use_container_width=True): st.session_state.kategori = "LIVIN"
+if k2.button("🏪 MERCHANT", use_container_width=True): st.session_state.kategori = "MERCHANT"
+if k3.button("💳 TRANSAKSI", use_container_width=True): st.session_state.kategori = "TRANSAKSI"
+
+st.markdown(f"<div style='text-align:center; color:var(--accent); font-weight:bold; margin-bottom:15px;'>Kategori Aktif: {st.session_state.kategori}</div>", unsafe_allow_html=True)
+
+cbtn1, cbtn2, cbtn3 = st.columns([1,1,1])
+if cbtn1.button("Leaderboard Cabang", use_container_width=True):
+    st.session_state.view = "cabang"; st.session_state.kode = None; st.session_state.page_num = 1; st.rerun()
+if cbtn2.button("Leaderboard Pegawai", use_container_width=True):
+    st.session_state.view = "pegawai"; st.session_state.kode = "ALL"; st.rerun()
+if cbtn3.button("⚙️ Admin Panel", use_container_width=True):
+    st.session_state.show_update_panel = not st.session_state.show_update_panel; st.rerun()
+
+
+# ---------------------------
+# Update / Import panel (admin)
+# ---------------------------
+if st.session_state.show_update_panel:
+    st.markdown("<hr style='border-color:rgba(255,255,255,0.04)'>", unsafe_allow_html=True)
+    with st.expander("Admin — unlock import", expanded=True):
+        pwd = st.text_input("Password admin", type="password")
+        if st.button("Unlock"):
+            if pwd == os.environ.get("ADMIN_PASSWORD", "changeme123"):
+                st.session_state.is_admin = True
+                st.success("Admin unlocked")
+            else:
+                st.error("Password salah.")
+                
+    if st.session_state.is_admin:
+        upload_file = st.file_uploader("Upload Excel (.xlsx/.xls) - Berisi sheet GMM LIVIN, GMM MERCHANT, GMM TRANSAKSI", type=['xlsx','xls'])
+        if upload_file:
+            try:
+                xls = pd.read_excel(upload_file, sheet_name=None, dtype=str)
+                st.success(f"Berhasil membaca {len(xls)} sheet: {', '.join(xls.keys())}")
+                
+                if st.button("Mulai Import Semua Sheet"):
+                    conn = sqlite3.connect(DB_PATH)
+                    cur = conn.cursor()
+                    
+                    master_data = {}
+                    
+                    # Helper function mapping column
+                    def find_col(df, aliases):
+                        lc_cols = [str(c).lower().strip() for c in df.columns]
+                        for a in aliases:
+                            if a.lower() in lc_cols: return df.columns[lc_cols.index(a.lower())]
+                        return None
+
+                    # 1. Sheet LIVIN
+                    if "GMM LIVIN" in xls:
+                        df_l = xls["GMM LIVIN"]
+                        c_nip = find_col(df_l, ['nip'])
+                        c_nama = find_col(df_l, ['nama','employee name'])
+                        c_kode = find_col(df_l, ['kode cabang','kode_cabang'])
+                        if c_nip and c_nama:
+                            for _, r in df_l.iterrows():
+                                nip = str(r[c_nip]).strip()
+                                if nip == 'nan' or not nip: continue
+                                master_data[nip] = {
+                                    'nip': nip, 'nama': str(r[c_nama]).strip(),
+                                    'kode_cabang': str(r[c_kode]).strip() if c_kode else '',
+                                    'unit': str(r[find_col(df_l, ['nama cabang','unit'])]).strip() if find_col(df_l, ['nama cabang','unit']) else '',
+                                    'area': str(r[find_col(df_l, ['area','wilayah'])]).strip() if find_col(df_l, ['area','wilayah']) else '',
+                                    'kelas_cabang': str(r[find_col(df_l, ['kelas cabang','kelas'])]).strip() if find_col(df_l, ['kelas cabang','kelas']) else '',
+                                    'posisi': str(r[find_col(df_l, ['posisi','unit kerja'])]).strip() if find_col(df_l, ['posisi','unit kerja']) else '',
+                                    'cif_akuisisi': normalize_val(r[find_col(df_l, ['cif akuisisi','cif'])]),
+                                    'cif_setor': normalize_val(r[find_col(df_l, ['cif setor'])]),
+                                    'end_balance': normalize_val(r[find_col(df_l, ['end_balance','end balance'])]),
+                                    'rata_rata': normalize_val(r[find_col(df_l, ['rata-rata','rata rata'])]),
+                                    'cif_sudah_transaksi': normalize_val(r[find_col(df_l, ['cif_sudah_transaksi','cif sudah transaksi'])]),
+                                }
+
+                    # 2. Sheet MERCHANT
+                    if "GMM MERCHANT" in xls:
+                        df_m = xls["GMM MERCHANT"]
+                        c_nip = find_col(df_m, ['nip'])
+                        if c_nip:
+                            for _, r in df_m.iterrows():
+                                nip = str(r[c_nip]).strip()
+                                if nip == 'nan' or not nip: continue
+                                if nip not in master_data:
+                                    master_data[nip] = {'nip': nip, 'nama': str(r[find_col(df_m, ['nama pegawai','nama'])]).strip()}
+                                master_data[nip]['total_referral_livin'] = normalize_val(r[find_col(df_m, ['total referral livin'])])
+                                master_data[nip]['total_referral_edc'] = normalize_val(r[find_col(df_m, ['total referral edc'])])
+
+                    # 3. Sheet TRANSAKSI
+                    if "GMM TRANSAKSI" in xls:
+                        df_t = xls["GMM TRANSAKSI"]
+                        c_nip = find_col(df_t, ['nip'])
+                        if c_nip:
+                            for _, r in df_t.iterrows():
+                                nip = str(r[c_nip]).strip()
+                                if nip == 'nan' or not nip: continue
+                                if nip not in master_data:
+                                    master_data[nip] = {'nip': nip, 'nama': str(r[find_col(df_t, ['nama pegawai','nama'])]).strip()}
+                                master_data[nip]['total_poin_transaksi'] = normalize_val(r[find_col(df_t, ['total poin transaksi'])])
+                                master_data[nip]['poin_on_us'] = normalize_val(r[find_col(df_t, ['poin on us'])])
+                                master_data[nip]['poin_off_us'] = normalize_val(r[find_col(df_t, ['poin off us'])])
+
+                    # Insert ke DB
+                    inserted = 0
+                    for nip, d in master_data.items():
+                        # Pastikan ada default value
+                        d.setdefault('kode_cabang', ''); d.setdefault('unit', ''); d.setdefault('area', ''); d.setdefault('kelas_cabang', '')
+                        d.setdefault('end_balance', 0); d.setdefault('cif_akuisisi', 0); d.setdefault('cif_setor', 0)
+                        d.setdefault('cif_sudah_transaksi', 0); d.setdefault('rata_rata', 0)
+                        d.setdefault('total_referral_livin', 0); d.setdefault('total_referral_edc', 0)
+                        d.setdefault('total_poin_transaksi', 0); d.setdefault('poin_on_us', 0); d.setdefault('poin_off_us', 0)
+
+                        if d['kode_cabang']:
+                            cur.execute("INSERT OR IGNORE INTO cabang (kode_cabang, unit, area, kelas_cabang) VALUES (?, ?, ?, ?)",
+                                        (d['kode_cabang'], d.get('unit'), d.get('area'), d.get('kelas_cabang')))
+                        
+                        cur.execute("""
+                            INSERT OR REPLACE INTO pegawai 
+                            (nip, nama, kode_cabang, unit, area, posisi, end_balance, cif_akuisisi, cif_setor, cif_sudah_transaksi, rata_rata,
+                             total_referral_livin, total_referral_edc, total_poin_transaksi, poin_on_us, poin_off_us)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (d['nip'], d['nama'], d['kode_cabang'], d.get('unit'), d.get('area'), d.get('posisi',''), 
+                              d['end_balance'], d['cif_akuisisi'], d['cif_setor'], d['cif_sudah_transaksi'], d['rata_rata'],
+                              d['total_referral_livin'], d['total_referral_edc'], d['total_poin_transaksi'], d['poin_on_us'], d['poin_off_us']))
+                        inserted += 1
+
+                    conn.commit()
+                    conn.close()
+                    st.success(f"Import selesai! Berhasil update {inserted} data pegawai gabungan.")
+
+            except Exception as e:
+                st.error(f"Gagal memproses file: {e}")
+
+        if st.button("⚠️ Hapus Seluruh Database"):
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM pegawai")
+            cur.execute("DELETE FROM cabang")
+            conn.commit()
+            conn.close()
+            st.success("Database berhasil dikosongkan.")
+
+# ---------------------------
+# Routing & Parameter
+# ---------------------------
+params = st.query_params
+if "kode" in params:
+    st.session_state.view = "pegawai"
+    st.session_state.kode = str(params.get("kode")).strip()
+if "view" in params:
+    st.session_state.view = str(params.get("view"))
+
+kategori_aktif = st.session_state.kategori
+fmt_fungsi = KAT_CONFIG[kategori_aktif]["fmt"]
+label_utama = KAT_CONFIG[kategori_aktif]["score_label"]
+label_kedua = KAT_CONFIG[kategori_aktif]["sec_label"]
+
+# ---------------------------
+# View: Cabang
+# ---------------------------
+if st.session_state.view == "cabang":
+    df = get_cabang_leaderboard(kategori_aktif)
+
+    area_options = ["All Area"] + sorted(df['area'].dropna().unique())
+    kelas_options = ["All Kelas"] + sorted(df['kelas_cabang'].dropna().unique())
+
+    colA, colB = st.columns(2)
+    with colA: area_filter = st.selectbox("Filter Area", options=area_options)
+    with colB: kelas_filter = st.selectbox("Filter Kelas Cabang", options=kelas_options)
+
+    if area_filter != "All Area": df = df[df['area'] == area_filter]
+    if kelas_filter != "All Kelas": df = df[df['kelas_cabang'] == kelas_filter]
+
+    total_all = df['total_balance'].sum() if not df.empty else 0
+
+    st.subheader(f"🏆 Top 3 Cabang - Kategori {kategori_aktif}")
+    cols = st.columns(3)
+    medals = [("Rank 1", "🥇", "gold"), ("Rank 2", "🥈", "silver"), ("Rank 3", "🥉", "bronze")]
+
+    for i, col in enumerate(cols):
+        if i < len(df) and i < 3:
+            r = df.iloc[i]
+            share_pct = (r['total_balance'] / total_all * 100) if total_all > 0 else 0
+            label, emoji, cls = medals[i]
+            with col:
+                st.markdown(f"""
+                <div class='leaderboard-card'>
+                  <div style='display:flex;justify-content:space-between;align-items:center'>
+                    <div>
+                      <div class='medal {cls}'>{emoji} {label}</div>
+                      <div style='font-weight:800'>{r['unit']}</div>
+                      <div class='small-muted'>{r['area']}</div>
+                    </div>
+                    <div style='text-align:right'>
+                      <div style='font-weight:800; font-size:1.1rem; color:var(--accent);'>{fmt_fungsi(r['total_balance'])}</div>
+                      <div class='small-muted'>{r['kode_cabang']}</div>
+                    </div>
+                  </div>
+                  <div style='margin-top:8px' class='small-muted'>{label_kedua}: {fmt_num(r['total_cif'])}</div>
+                  <div style='margin-top:8px;display:flex;justify-content:space-between;align-items:center'>
+                    <a href='?kode={r["kode_cabang"]}' style='color:var(--accent);font-weight:700;text-decoration:none'>Lihat Pegawai →</a>
+                    <div class='small-muted'>{share_pct:0.1f}% Total</div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    st.markdown("<br><h4>Daftar Semua Cabang</h4>", unsafe_allow_html=True)
+
+    for rank, (_, r) in enumerate(df.iterrows(), start=1):
+        kode_cb = r.get('kode_cabang', '')
+        unit = r.get('unit', '')
+        area = r.get('area', '')
+        total_balance = r.get('total_balance', 0)
+        total_cif = r.get('total_cif', 0)
+        
+        rank_cls, medal, rank_label = ("", "", str(rank))
+        if rank == 1: rank_cls, medal, rank_label = ("top1", "🥇", "1")
+        elif rank == 2: rank_cls, medal, rank_label = ("top2", "🥈", "2")
+        elif rank == 3: rank_cls, medal, rank_label = ("top3", "🥉", "3")
+
+        row_html = f"""
+        <div class="row-card">
+            <div class="row-left">
+                <div class="rank-badge {rank_cls}">{medal} {rank_label}</div>
+                <div class="row-meta">
+                    <div class="unit">{unit}</div>
+                    <div class="info small-muted">Area: {area} • Kode: {kode_cb} • Kelas: {r['kelas_cabang']}</div>
+                    <div class="info small-muted">{label_utama}: <span style="color:white;font-weight:bold;">{fmt_fungsi(total_balance)}</span> &nbsp;|&nbsp; {label_kedua}: {fmt_num(total_cif)}</div>
+                </div>
+            </div>
+            <div class="row-right">
+                <a class="detail-link" href="?kode={kode_cb}">Detail</a>
+            </div>
+        </div>
+        """
+        st.markdown(row_html, unsafe_allow_html=True)
+
+# ---------------------------
+# View: Pegawai & Futsal Pitch
+# ---------------------------
+def render_futsal_responsive(players, fmt_fn):
+    import html as _html
+    pl = list(players) if players is not None else []
+    def esc(x, default='-'):
+        try: return _html.escape(str(x))
+        except: return default
+    def name_of(p): return esc(p.get("nama")) if p else "-"
+    def bal_of(p): return fmt_fn(p.get("end_balance", 0)) if p else fmt_fn(0)
+
+    def point_html(idx, p):
+        name = name_of(p)
+        posisi = esc(p.get("posisi")) if p else "-"
+        bal = bal_of(p)
+        cif = fmt_num(p.get("cif_akuisisi", 0)) if p else "0"
+        return f'''
+        <div class="pt-wrap" title="{name} · {bal}">
+          <div class="pt-dot">{idx}</div>
+          <div class="pt-label">
+            <div class="pl-name">{name}</div>
+            <div class="pl-posisi">({posisi})</div>
+            <div class="pl-bal">{bal} ~ {cif}</div>
+          </div>
+        </div>
+        '''
+
+    field = [pl[i] if i < len(pl) else None for i in range(5)]
+    bench = pl[5:] if len(pl) > 5 else []
+
+    template = r'''
+    <div style="width:100%;display:flex;justify-content:center;padding:10px 6px;">
+      <div style="width:100%;max-width:1100px;">
+        <style>
+          :root{box-sizing:border-box} *{box-sizing:inherit}
+          .pitch{ position:relative; background: linear-gradient(180deg,#053a31,#042822); border-radius:12px; padding:18px; border:1px solid rgba(255,255,255,0.03); box-shadow: inset 0 30px 60px rgba(0,0,0,0.32); overflow:hidden; color:rgba(255,255,255,0.95); }
+          .court-svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; opacity:0.14; }
+          .field-grid{ display:grid; grid-template-columns: minmax(10px,1fr) repeat(3, minmax(80px, 160px)) minmax(10px,1fr); grid-template-rows: min-content 1fr 1fr; gap:8px 14px; align-items:end; justify-items:center; min-height:360px; width:100%; }
+          .p1{ grid-column: 2 / 5; grid-row: 1 / 2; }
+          .p2{ grid-column: 2 / 3; grid-row: 2 / 3; }
+          .p3{ grid-column: 4 / 5; grid-row: 2 / 3; }
+          .p4{ grid-column: 1 / 2; grid-row: 3 / 4; }
+          .p5{ grid-column: 5 / 6; grid-row: 3 / 4; }
+          .pt-wrap{ display:flex; flex-direction:column; align-items:center; gap:6px; width:100%; max-width:220px; padding:6px; }
+          .pt-dot{ width:56px; height:56px; border-radius:50%; background: radial-gradient(circle at 30% 30%, #26c57a, #00a060); display:flex; align-items:center; justify-content:center; font-weight:900; color:#052c20; box-shadow:0 8px 18px rgba(0,0,0,0.45); border:2px solid rgba(255,255,255,0.06); font-size:18px; }
+          .pt-label{ text-align:center; } .pl-name{ font-weight:800; font-size:13px; line-height:1.05; } .pl-posisi{ font-size:8px; margin-top:2px; color:rgba(255,255,255,0.8); } .pl-bal{ font-weight:700; font-size:13px; margin-top:4px; color:rgba(255,255,255,0.9); }
+          .separator{ margin-top:18px; border-top:2px dashed rgba(255,255,255,0.05); padding-top:12px; } .bench{ display:flex; flex-wrap:wrap; gap:12px; justify-content:center; align-items:flex-start; }
+          @media (max-width:720px){ .field-grid{ grid-template-columns: minmax(6px,1fr) repeat(3, minmax(60px, 120px)) minmax(6px,1fr); gap:10px 8px; min-height:320px; } .pt-wrap{ max-width:140px; padding:4px; } .pt-dot{ width:48px; height:48px; font-size:15px; } .pl-name, .pl-bal{ font-size:12px } }
+        </style>
+        <div class="pitch">
+          <svg class="court-svg" viewBox="0 0 1000 600" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="40" y="30" width="920" height="540" rx="18" ry="18" fill="none" stroke="white" stroke-width="4" opacity="0.08"/>
+            <line x1="500" y1="30" x2="500" y2="570" stroke="white" stroke-width="2" opacity="0.06" />
+            <circle cx="500" cy="300" r="60" fill="none" stroke="white" stroke-width="2" opacity="0.06" />
+          </svg>
+          <div class="field-grid">
+            <div class="p1">__P1__</div><div class="p2">__P2__</div><div class="p3">__P3__</div><div class="p4">__P4__</div><div class="p5">__P5__</div>
+          </div>
+          <div class="separator"><div class="bench">__BENCH__</div></div>
+        </div>
+      </div>
+    </div>
+    '''
+
+    pieces = {'__P1__': point_html(1, field[0]), '__P2__': point_html(2, field[1]), '__P3__': point_html(3, field[2]), '__P4__': point_html(4, field[3]), '__P5__': point_html(5, field[4])}
+    bench_html = ""
+    for idx, b in enumerate(bench, start=6): bench_html += point_html(idx, b)
+    if not bench: bench_html = '<div style="color:rgba(255,255,255,0.6);font-size:13px;padding:8px">Bench kosong</div>'
+
+    html_out = template
+    for k, v in pieces.items(): html_out = html_out.replace(k, v)
+    return html_out.replace('__BENCH__', bench_html)
+
+if st.session_state.view == "pegawai":
+    kode = st.session_state.kode or "ALL"
+    st.subheader(f"Leaderboard Pegawai - {kategori_aktif}")
+    
+    dfc = get_cabang_leaderboard(kategori_aktif)
+    options = ["ALL"] + dfc['area'].dropna().unique().tolist() + dfc.apply(lambda r: f"{r['kode_cabang']} — {r['unit']}", axis=1).tolist()
+    
+    default_index = 0
+    if st.session_state.kode in dfc['area'].values: default_index = options.index(st.session_state.kode)
+    else:
+        for r in dfc.itertuples():
+            if st.session_state.kode == r.kode_cabang:
+                cb_lbl = f"{r.kode_cabang} — {r.unit}"
+                if cb_lbl in options: default_index = options.index(cb_lbl)
+                break
+
+    chosen = st.selectbox("Ketik Disini", options=options, index=default_index)
+    if chosen == "ALL": st.session_state.kode = "ALL"
+    elif " — " in chosen: st.session_state.kode = chosen.split(" — ",1)[0].strip()
+    else: st.session_state.kode = chosen
+
+    dfp_all = get_pegawai(st.session_state.kode, kategori_aktif)
+    
+    if dfp_all.empty:
+        st.warning("Tidak ada pegawai untuk filter ini.")
+    else:
+        total_pegawai = len(dfp_all)
+        total_balance = dfp_all["end_balance"].sum()
+        avg_balance = dfp_all["end_balance"].mean()
+        total_cif = dfp_all["cif_akuisisi"].sum()
+        
+        top_row = dfp_all.iloc[0]
+        top_name = top_row["nama"]
+        top_value = top_row["end_balance"]
+
+        st.markdown(f"""
+        <div class="stat-container">
+            <div class="stat-card">
+                <div class="stat-title">Total Pegawai</div>
+                <div class="stat-value">{total_pegawai}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Akumulasi {label_utama}</div>
+                <div class="stat-value" style="color:var(--accent);">{fmt_fungsi(total_balance)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Rata-rata {label_utama}</div>
+                <div class="stat-value">{fmt_fungsi(avg_balance)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Top Performer</div>
+                <div class="stat-value">{top_name}</div>
+                <div class="stat-extra">{fmt_fungsi(top_value)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Total {label_kedua}</div>
+                <div class="stat-value">{fmt_num(total_cif)}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        players = dfp_all.to_dict('records')
+        html_pitch = render_futsal_responsive(players, fmt_fungsi)
+        import streamlit.components.v1 as components
+        components.html(html_pitch, height=720, scrolling=True)
+
+        st.markdown("---")
+        st.markdown("<h4>Daftar Pegawai</h4>", unsafe_allow_html=True)
+        
+        page_size = 50
+        total_pages = max(1, math.ceil(total_pegawai / page_size))
+        start = (st.session_state.page_num - 1) * page_size
+        end = start + page_size
+        dfp_page = dfp_all.iloc[start:end]
+
+        for idx, (_, r) in enumerate(dfp_page.iterrows(), start=start+1):
+            nama, nip, posisi = r.get('nama', '-'), r.get('nip', ''), r.get('posisi','')
+            cif_display = fmt_num(r.get('cif_akuisisi', 0))
+            end_bal = fmt_fungsi(r.get('end_balance', 0))
+            
+            rank_cls, medal, rank_label = ("", "", str(idx))
+            if idx == 1: rank_cls, medal, rank_label = ("top1", "🥇", "1")
+            elif idx == 2: rank_cls, medal, rank_label = ("top2", "🥈", "2")
+            elif idx == 3: rank_cls, medal, rank_label = ("top3", "🥉", "3")
+
+            row_html = f"""
+            <div class="row-card">
+                <div class="row-left">
+                    <div class="rank-badge {rank_cls}">{medal} {rank_label}</div>
+                    <div class="row-meta">
+                        <div class="name">{nama}</div>
+                        <div class="small-muted">{nip} · {posisi} · {label_kedua}: {cif_display}</div>
+                    </div>
+                </div>
+                <div class="row-right">
+                    <a class="detail-link" href="?view=detail_pegawai&nip={nip}">Detail</a>
+                    <div style="margin-top:6px; font-weight:800; color:var(--accent);">{end_bal}</div>
+                </div>
+            </div>
+            """
+            st.markdown(row_html, unsafe_allow_html=True)
+
+        b1,b2,b3 = st.columns([1,1,6])
+        if b1.button("← Prev") and st.session_state.page_num > 1: st.session_state.page_num -= 1; st.rerun()
+        if b2.button("Next →") and st.session_state.page_num < total_pages: st.session_state.page_num += 1; st.rerun()
+        b3.markdown(f"<div class='small-muted'>Halaman {st.session_state.page_num} / {total_pages}</div>", unsafe_allow_html=True)
+
+# ---------------------------
+# View: Detail Pegawai
+# ---------------------------
+if st.session_state.view == "detail_pegawai":
+    nip = params.get("nip", [""])[0] if isinstance(params.get("nip"), list) else params.get("nip")
+    
+    if not nip: st.error("NIP tidak ditemukan.")
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        df_detail = pd.read_sql_query("SELECT * FROM pegawai WHERE nip = ?", conn, params=(nip,))
+        conn.close()
+
+        if df_detail.empty: st.error("Data pegawai tidak ditemukan.")
+        else:
+            r = df_detail.iloc[0]
+            st.subheader(f"Detail Pegawai — {r['nama']}")
+            
+            emp_banner = f"""
+            <div class="emp-banner">
+                <div class="emp-avatar">{r['nama'][0].upper() if r['nama'] else "?"}</div>
+                <div>
+                    <div class="emp-info-title">{r['nama']}</div>
+                    <div class="emp-info-sub">{r['nip']} · {r.get('posisi','')} · {r.get('unit','')}</div>
+                </div>
+            </div>
+            """
+            st.markdown(emp_banner, unsafe_allow_html=True)
+
+            if kategori_aktif == "LIVIN":
+                cards = [
+                    ("🏦", "End Balance", fmt_rp(r["end_balance"])),
+                    ("📌", "CIF Akuisisi", fmt_num(r["cif_akuisisi"])),
+                    ("💰", "CIF Setor", fmt_num(r["cif_setor"])),
+                    ("🔄", "CIF Transaksi", fmt_num(r["cif_sudah_transaksi"])),
+                    ("⏱️", "Frek Dari CIF", fmt_num(r["frek_dari_cif_akuisisi"])),
+                    ("📊", "Rata-rata", fmt_rp(r["rata_rata"]))
+                ]
+            elif kategori_aktif == "MERCHANT":
+                cards = [
+                    ("🏪", "Total Referral Livin", fmt_num(r["total_referral_livin"])),
+                    ("💳", "Total Referral EDC", fmt_num(r["total_referral_edc"]))
+                ]
+            else: # TRANSAKSI
+                cards = [
+                    ("📈", "Total Poin Transaksi", fmt_num(r["total_poin_transaksi"])),
+                    ("🛡️", "Poin On Us", fmt_num(r["poin_on_us"])),
+                    ("🌐", "Poin Off Us", fmt_num(r["poin_off_us"]))
+                ]
+
+            html_cards = "<div class='detail-grid'>"
+            for icon, title, val in cards:
+                html_cards += f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>"
+            html_cards += "</div>"
+            
+            st.markdown(html_cards, unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("← Kembali ke Leaderboard"):
+                st.session_state.view = "pegawai"
+                st.query_params.clear()
+                st.rerun()
