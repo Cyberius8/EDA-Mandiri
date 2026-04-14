@@ -556,8 +556,9 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                                 if nip == 'nan' or not nip: continue
                                 if nip not in master_data:
                                     master_data[nip] = {'nip': nip, 'nama': str(r[find_col(df_m, ['nama pegawai','nama'])]).strip()}
-                                master_data[nip]['total_referral_livin'] = normalize_val(r[find_col(df_m, ['total referral livin'])])
                                 master_data[nip]['total_referral_edc'] = normalize_val(r[find_col(df_m, ['total referral edc'])])
+                                master_data[nip]['total_referral_livin'] = normalize_val(r[find_col(df_m, ['total referral livin'])])
+                                
 
                     # 3. Sheet TRANSAKSI
                     if "GMM TRANSAKSI" in xls:
