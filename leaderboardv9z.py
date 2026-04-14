@@ -54,7 +54,7 @@ KAT_CONFIG = {
         "score_col": "total_referral_edc",
         "score_label": "Referral EDC",
         "sec_col": "total_referral_livin",
-        "sec_label": "Referral Livin Merchant",
+        "sec_label": "Referral LVM",
         "fmt": fmt_num
     },
     "TRANSAKSI": {
@@ -1029,7 +1029,7 @@ if st.session_state.view == "detail_pegawai":
 
             st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>🏪 MERCHANT <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_merchant}</span></h4>", unsafe_allow_html=True)
             cards_merchant = [
-                ("🏪", "Referral Livin Merchant", fmt_num(r["total_referral_livin"])),
+                ("🏪", "Referral LVM", fmt_num(r["total_referral_livin"])),
                 ("💳", "Referral EDC", fmt_num(r["total_referral_edc"]))
             ]
             html_merchant = "<div class='detail-grid'>"
