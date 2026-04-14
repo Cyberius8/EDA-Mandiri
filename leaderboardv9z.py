@@ -995,7 +995,7 @@ if st.session_state.view == "detail_pegawai":
                 return cur.fetchone()[0]
 
             rank_livin = get_global_rank("end_balance", r["end_balance"])
-            rank_merchant = get_global_rank("total_referral_livin", r["total_referral_livin"])
+            rank_merchant = get_global_rank("total_referral_edc", r["total_referral_edc"])
             rank_transaksi = get_global_rank("total_poin_transaksi", r["total_poin_transaksi"])
             conn.close()
 
