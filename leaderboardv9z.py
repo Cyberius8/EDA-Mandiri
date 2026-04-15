@@ -993,7 +993,7 @@ if st.session_state.view == "cabang":
                 <div class="row-meta">
                     <div class="unit">{unit}</div>
                     <div class="info small-muted">Area: {area} • Kode: {kode_cb}</div>
-                    <div class="info small-muted">{label_utama}: <span style="color:white;font-weight:bold;">{fmt_fungsi(total_balance)}</span>&nbsp;|&nbsp;{label_kedua}:<span style="color:white;font-weight:bold;">{fmt_fungsi(total_cif)}</span></div>
+                    <div class="info small-muted">{label_utama}: <span style="color:white;font-weight:bold;">{fmt_fungsi(total_balance)}</span>&nbsp;|&nbsp;{label_kedua}:<span style="color:white;font-weight:bold;">{fmt_num(total_cif)}</span></div>
                 </div>
             </div>
             """
