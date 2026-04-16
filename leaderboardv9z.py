@@ -276,6 +276,7 @@ body, .stApp {{ font-family: 'Inter', sans-serif; background: linear-gradient(18
 .emp-avatar {{ width: 64px; height: 64px; flex-shrink: 0; border-radius: 50%; background: linear-gradient(135deg, #ffffff33, #ffffff11); display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 900; color: #fff; border: 2px solid rgba(255,255,255,0.2); }}
 .emp-info-title {{ font-size: 1.2rem; font-weight: 800; line-height: 1.2; }}
 
+
 /* Penyesuaian Ekstrem untuk Layar HP Kecil (Mobile) */
 @media (max-width: 600px) {{
     .logo-img {{ width: 140px; height: 140px; }}
@@ -288,9 +289,10 @@ body, .stApp {{ font-family: 'Inter', sans-serif; background: linear-gradient(18
     .detail-link {{ font-size: 0.75rem; padding: 4px 8px; }}
     .stat-card {{ padding: 10px; }}
     .stat-value {{ font-size: 1.1rem; }}
-    .detail-grid {{ grid-template-columns: repeat(2, 1fr); }} /* 2 Kolom untuk HP */
+    .detail-grid {{ grid-template-columns: repeat(1, 1fr); }} /* 2 Kolom untuk HP */
     .emp-banner {{ flex-direction: column; text-align: center; justify-content: center; }}
 }}
+
 </style>
 """
 
@@ -421,7 +423,7 @@ st.markdown(f"<div class='header-center'><img src='{LOGO_PATH}' class='logo-img'
 st.markdown("""
 <div class='header-center' style='margin-top: 12px;'>
   <div class='title-pill'>GMM RACEBOARD FASE 3</div>
-  <div class='subtitle-small' style='margin-top: 8px;'>GMM LIVIN (14 April 2026) || GMM MERCHANT (14 April 2026) || GMM TRANSAKSI (14 April 2026)</div>
+  <div class='subtitle-small' style='margin-top: 8px;'>14 April 2026</div>
 </div><br>
 """, unsafe_allow_html=True)
 
@@ -699,7 +701,8 @@ def render_profil_pegawai(nip):
 
     st.markdown(f"<h4 style='color:var(--accent); margin-top:24px; font-size: 1.1rem;'>📱 LIVIN <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_livin}</span></h4>", unsafe_allow_html=True)
     cards_livin = [
-        ("🏦", "End Balance", fmt_rp(r["end_balance"])), ("📌", "CIF Akuisisi", fmt_num(r["cif_akuisisi"])),
+        ("🏦", "End Balance", fmt_rp(r["end_balance"])),
+        ("📌", "CIF Akuisisi", fmt_num(r["cif_akuisisi"])),
         ("💰", "CIF Setor", fmt_num(r["cif_setor"])), ("🔄", "CIF Transaksi", fmt_num(r["cif_sudah_transaksi"])),
         ("⏱️", "Frek Dari CIF", fmt_num(r["frek_dari_cif_akuisisi"])), ("📊", "Rata-rata", fmt_rp(r["rata_rata"]))
     ]
@@ -707,14 +710,76 @@ def render_profil_pegawai(nip):
     st.markdown(html_livin, unsafe_allow_html=True)
 
     st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>🏪 MERCHANT <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_merchant}</span></h4>", unsafe_allow_html=True)
-    cards_merchant = [("🏪", "Referral EDC", fmt_num(r["total_referral_edc"])), ("💳", "Referral LVM", fmt_num(r["total_referral_livin"]))]
+    total_refferal = int(r.get("total_referral_edc",0)+ r.get("total_referral_livin",0))
+    cards_merchant = [
+        ("🏪", "Total Refferal",total_refferal ),
+        ("🖥️", "Referral EDC", fmt_num(r["total_referral_edc"])),
+        ("💳", "Referral LVM", fmt_num(r["total_referral_livin"]))]
     html_merchant = "<div class='detail-grid'>" + "".join([f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>" for icon, title, val in cards_merchant]) + "</div>"
     st.markdown(html_merchant, unsafe_allow_html=True)
 
     st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_transaksi}</span></h4>", unsafe_allow_html=True)
-    cards_transaksi = [("📈", "Total Poin", fmt_num(r["total_poin_transaksi"])), ("🛡️", "Poin On Us", fmt_num(r["poin_on_us"])), ("🌐", "Poin Off Us", fmt_num(r["poin_off_us"]))]
-    html_transaksi = "<div class='detail-grid'>" + "".join([f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>" for icon, title, val in cards_transaksi]) + "</div>"
+
+    # 1. Ambil nilai dasar (menggunakan .get untuk menghindari KeyError)
+    poin_on_us = r.get("poin_on_us", 0)
+    poin_off_us = r.get("poin_off_us", 0)
+
+    # 2. Perhitungan Transaksi
+    trx_on_us = poin_on_us / 5
+    trx_off_us = (-1)*(poin_off_us / 5)
+    total_trx = trx_on_us + trx_off_us
+
+    # 3. Perhitungan Persentase (% On Us)
+    if total_trx > 0:
+        pct_on_us = trx_on_us / total_trx
+    else:
+        pct_on_us = 0.0
+
+    # 4. Logika Kebutuhan
+    if pct_on_us <= 0.80:
+        # Rumus: (80% * (Total Trx) - Trx On Us) / (100% - 80%)
+        # 100% - 80% = 0.2
+        kebutuhan_val = int((0.8 * total_trx - trx_on_us) / 0.2)
+        # Format menggunakan fungsi fmt_num milik Anda
+        kebutuhan_display = (
+            f"{kebutuhan_val}<br>"
+            f"<span style='font-size:0.7rem; font-weight:normal; color:rgba(255,255,255,0.7);'>"
+            f"Kamu perlu {kebutuhan_val} kali transaksi On Us agar mencapai 80%</span>"
+        )
+    else:
+        # Jika sudah >= 80%, berikan status Tercapai
+        kebutuhan_display = (
+            "Tercapai 🎉<br>"
+            "<span style='font-size:0.7rem; font-weight:normal; color:rgba(255,255,255,0.7);'>"
+            "Jaga agar selalu bertransaksi On Us</span>"
+        )
+
+    # 5. Susun List Kartu
+    cards_transaksi = [
+        ("📈", "Total Poin", fmt_num(r.get("total_poin_transaksi", 0))),
+        ("🏦", "Poin On Us", fmt_num(poin_on_us)),
+        ("🌍", "Poin Off Us", fmt_num(poin_off_us)),
+        ("📦", "Total Trx", fmt_num(int(total_trx))),    # Dikonversi ke int agar tidak desimal
+        ("🔄", "Trx On Us", fmt_num(int(trx_on_us))),
+        ("🌐", "Trx Off Us", fmt_num(int(trx_off_us))),
+        ("📊", "% On Us", f"{pct_on_us:.1%}"),
+        ("🎯", "% Target", "80.0%"),
+        ("💡", "Kebutuhan", kebutuhan_display)           # Menampilkan angka atau "Tercapai"
+    ]
+    # Render Grid HTML dengan logika class 'full-width'
+    html_transaksi = "<div class='detail-grid'>" + "".join([
+        # Tambahkan class 'full-width' jika title-nya adalah 'Kebutuhan'
+        f"<div class='detail-card{' full-width' if title == 'Kebutuhan' else ''}'>"
+        f"<div class='detail-icon'>{icon}</div>"
+        f"<div class='detail-title'>{title}</div>"
+        f"<div class='detail-value'>{val}</div>"
+        f"</div>" 
+        for icon, title, val in cards_transaksi
+    ]) + "</div>"
+
     st.markdown(html_transaksi, unsafe_allow_html=True)
+    # html_transaksi = "<div class='detail-grid'>" + "".join([f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>" for icon, title, val in cards_transaksi]) + "</div>"
+    # st.markdown(html_transaksi, unsafe_allow_html=True)
     return True
 
 def render_profil_cabang(kode_cabang):
@@ -993,7 +1058,7 @@ if st.session_state.view == "cabang":
                 <div class="row-meta">
                     <div class="unit">{unit}</div>
                     <div class="info small-muted">Area: {area} • Kode: {kode_cb}</div>
-                    <div class="info small-muted">{label_utama}: <span style="color:white;font-weight:bold;">{fmt_fungsi(total_balance)}</span>&nbsp;|&nbsp;{label_kedua}:<span style="color:white;font-weight:bold;">{fmt_num(total_cif)}</span></div>
+                    <div class="info small-muted">{label_utama}: <span style="color:white;font-weight:bold;">{fmt_fungsi(total_balance)}</span>&nbsp;|&nbsp;{label_kedua}:<span style="color:white;font-weight:bold;">{fmt_fungsi(total_cif)}</span></div>
                 </div>
             </div>
             """
