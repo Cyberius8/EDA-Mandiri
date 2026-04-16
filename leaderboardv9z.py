@@ -744,7 +744,7 @@ def render_profil_pegawai(nip):
         kebutuhan_display = (
             f"{kebutuhan_val}<br>"
             f"<span style='font-size:0.7rem; font-weight:normal; color:rgba(255,255,255,0.7);'>"
-            f"Kamu perlu {kebutuhan_val} kali transaksi On Us agar mencapai 80%</span>"
+            f"Kamu perlu {kebutuhan_val} kali transaksi On Us agar mencapai 80%"
             f"& Tanpa Menambah Transaksi Off Us</span>"
         )
     else:
