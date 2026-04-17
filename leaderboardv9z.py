@@ -8,7 +8,6 @@ import math
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from streamlit_gsheets import GSheetsConnection
 
 # 1. WAJIB DI ATAS: Konfigurasi Page Streamlit untuk Mobile
 st.set_page_config(
@@ -60,11 +59,11 @@ KAT_CONFIG = {
         "fmt": fmt_num
     },
     "TRANSAKSI": {
-        "score_col": "total_poin_transaksi",
-        "score_label": "Total Poin",
-        "sec_col": "poin_on_us",
-        "sec_label": "Poin On Us",
-        "fmt": fmt_num
+        "score_col": "pct_on_us", 
+        "score_label": "% On Us",
+        "sec_col": "total_poin_transaksi",
+        "sec_label": "Total Poin",
+        "fmt": fmt_pct 
     }
 }
 
@@ -108,6 +107,9 @@ def init_db():
         total_poin_transaksi REAL DEFAULT 0,
         poin_on_us REAL DEFAULT 0,
         poin_off_us REAL DEFAULT 0,
+        frek_on_us REAL DEFAULT 0,
+        frek_off_us REAL DEFAULT 0,
+        pct_on_us REAL DEFAULT 0,
         FOREIGN KEY (kode_cabang) REFERENCES cabang(kode_cabang)
     )
     """)
@@ -131,16 +133,26 @@ def get_cabang_leaderboard(kategori="LIVIN"):
     sc = conf["score_col"]
     se = conf["sec_col"]
 
+    if kategori == "TRANSAKSI":
+        # KHUSUS CABANG: Kembalikan ke akumulasi poin
+        sc_expr = "SUM(p.total_poin_transaksi)"
+        se_expr = "SUM(p.poin_on_us)"
+        avg_sc_expr = "0" 
+    else:
+        sc_expr = f"SUM(p.{sc})"
+        se_expr = f"SUM(p.{se})"
+        avg_sc_expr = f"AVG(p.{sc})"
+
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(f"""
         SELECT k.kode_cabang,
                COALESCE(c.unit, k.kode_cabang) AS unit,
                COALESCE(c.area, '(Unknown)') AS area,
                COALESCE(c.kelas_cabang, '-') AS kelas_cabang,
-               IFNULL(SUM(p.{sc}),0) AS total_balance,
+               IFNULL({sc_expr},0) AS total_balance,
                IFNULL(COUNT(p.nip),0) AS jumlah_pegawai,
-               IFNULL(AVG(p.{sc}),0) AS rata_rata_saldo,
-               IFNULL(SUM(p.{se}),0) AS total_cif
+               IFNULL({avg_sc_expr},0) AS rata_rata_saldo,
+               IFNULL({se_expr},0) AS total_cif
         FROM (
           SELECT kode_cabang FROM cabang 
           WHERE kode_cabang IS NOT NULL AND TRIM(kode_cabang) != '' AND LOWER(kode_cabang) NOT IN ('unknown', 'nan')
@@ -155,27 +167,32 @@ def get_cabang_leaderboard(kategori="LIVIN"):
     """, conn)
     conn.close()
     return df
-
 def get_pegawai(kode, kategori="LIVIN"):
     conf = KAT_CONFIG[kategori]
     sc = conf["score_col"]
     se = conf["sec_col"]
 
+    if kategori == "TRANSAKSI":
+        # Gunakan frekuensi asli untuk persentase pegawai
+        sc_expr = "(CASE WHEN (frek_on_us + frek_off_us) > 0 THEN (frek_on_us / (frek_on_us + frek_off_us)) * 100.0 ELSE 0 END)"
+        se_expr = "total_poin_transaksi"
+    else:
+        sc_expr = sc
+        se_expr = se
+
     conn = sqlite3.connect(DB_PATH)
-    
-    # Tambahkan filter pengecualian langsung di base_query
     base_query = f"""
         SELECT nip, nama, kode_cabang, unit, 
-               IFNULL({sc},0) AS end_balance, 
-               IFNULL({se},0) AS cif_akuisisi, 
-               posisi, area, nama_cabang, avatar_url
+               IFNULL({sc_expr},0) AS end_balance, 
+               IFNULL({se_expr},0) AS cif_akuisisi, 
+               posisi, area, nama_cabang, avatar_url,
+               total_poin_transaksi, poin_on_us, poin_off_us, frek_on_us, frek_off_us
         FROM pegawai
         WHERE kode_cabang IS NOT NULL 
           AND TRIM(kode_cabang) != '' 
           AND LOWER(kode_cabang) NOT IN ('unknown', 'nan')
     """
     
-    # Klausa selanjutnya diganti menggunakan "AND" (bukan "WHERE" lagi)
     if kode is None or kode == "ALL":
         df = pd.read_sql_query(base_query + " ORDER BY end_balance DESC, cif_akuisisi DESC", conn)
     elif len(kode) == 3:
@@ -188,7 +205,6 @@ def get_pegawai(kode, kategori="LIVIN"):
             df = pd.read_sql_query(base_query + " AND area = ? ORDER BY end_balance DESC, cif_akuisisi DESC", conn, params=(kode,))
     conn.close()
     return df
-
 def normalize_val(x):
     if pd.isna(x) or x is None: return 0
     s = str(x).strip().replace(',', '.')
@@ -369,34 +385,13 @@ def log_visitor(nip, nama):
     except:
         ip_address = "Unknown_IP"
         
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
     waktu_sekarang = datetime.now(ZoneInfo("Asia/Makassar")).strftime("%Y-%m-%d %H:%M:%S")
-    
-    # 1. Buat koneksi ke GSheets
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    
-    # 2. Siapkan data baris baru sebagai DataFrame
-    new_log = pd.DataFrame({
-        "waktu": [waktu_sekarang],
-        "nip": [nip],
-        "nama": [nama],
-        "ip_address": [ip_address]
-    })
-    
-    try:
-        # 3. Baca data lama yang sudah ada di Sheet
-        existing_data = conn.read(worksheet="access_log", usecols=list(range(4)))
-        
-        # Bersihkan baris kosong (jika ada) bawaan Google Sheets
-        existing_data = existing_data.dropna(how="all")
-        
-        # 4. Gabungkan data lama dengan data baru
-        updated_data = pd.concat([existing_data, new_log], ignore_index=True)
-        
-        # 5. Timpa Sheet dengan data yang sudah di-update
-        conn.update(worksheet="access_log", data=updated_data)
-        
-    except Exception as e:
-        st.error(f"Gagal mencatat log ke Google Sheets: {e}")
+    cur.execute("INSERT INTO access_log (waktu, nip, nama, ip_address) VALUES (?, ?, ?, ?)", 
+                (waktu_sekarang, nip, nama, ip_address))
+    conn.commit()
+    conn.close()
 
 def get_visit_stats(n):
     conn = sqlite3.connect(DB_PATH)
@@ -654,6 +649,7 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                                 master_data[nip]['total_referral_edc'] = normalize_val(r[find_col(df_m, ['total referral edc'])])
 
                     # 3. Sheet TRANSAKSI
+# 3. Sheet TRANSAKSI
                     if "GMM TRANSAKSI" in xls:
                         df_t = xls["GMM TRANSAKSI"]
                         c_nip = find_col(df_t, ['nip'])
@@ -666,6 +662,11 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                                 master_data[nip]['total_poin_transaksi'] = normalize_val(r[find_col(df_t, ['total poin transaksi'])])
                                 master_data[nip]['poin_on_us'] = normalize_val(r[find_col(df_t, ['poin on us'])])
                                 master_data[nip]['poin_off_us'] = normalize_val(r[find_col(df_t, ['poin off us'])])
+                                
+                                # AMBIL DATA FREKUENSI SESUAI KOLOM BARU
+                                master_data[nip]['frek_on_us'] = normalize_val(r[find_col(df_t, ['frek on us'])])
+                                master_data[nip]['frek_off_us'] = normalize_val(r[find_col(df_t, ['frek off us'])])
+                                master_data[nip]['pct_on_us'] = r[find_col(df_t, ['pct on us'])]
 
                     inserted = 0
                     for nip, d in master_data.items():
@@ -674,6 +675,7 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                         d.setdefault('cif_sudah_transaksi', 0); d.setdefault('rata_rata', 0)
                         d.setdefault('total_referral_livin', 0); d.setdefault('total_referral_edc', 0)
                         d.setdefault('total_poin_transaksi', 0); d.setdefault('poin_on_us', 0); d.setdefault('poin_off_us', 0)
+                        d.setdefault('frek_on_us', 0); d.setdefault('frek_off_us', 0); d.setdefault('pct_on_us', 0)
 
                         if d['kode_cabang']:
                             cur.execute("INSERT OR IGNORE INTO cabang (kode_cabang, unit, area, kelas_cabang) VALUES (?, ?, ?, ?)",
@@ -682,11 +684,11 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                         cur.execute("""
                             INSERT OR REPLACE INTO pegawai 
                             (nip, nama, kode_cabang, unit, area, posisi, end_balance, cif_akuisisi, cif_setor, cif_sudah_transaksi, rata_rata,
-                             total_referral_livin, total_referral_edc, total_poin_transaksi, poin_on_us, poin_off_us)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             total_referral_livin, total_referral_edc, total_poin_transaksi, poin_on_us, poin_off_us, frek_on_us, frek_off_us, pct_on_us)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (d['nip'], d['nama'], d['kode_cabang'], d.get('unit'), d.get('area'), d.get('posisi',''), 
                               d['end_balance'], d['cif_akuisisi'], d['cif_setor'], d['cif_sudah_transaksi'], d['rata_rata'],
-                              d['total_referral_livin'], d['total_referral_edc'], d['total_poin_transaksi'], d['poin_on_us'], d['poin_off_us']))
+                              d['total_referral_livin'], d['total_referral_edc'], d['total_poin_transaksi'], d['poin_on_us'], d['poin_off_us'], d['frek_on_us'], d['frek_off_us'], d['pct_on_us']))
                         inserted += 1
 
                     conn.commit()
@@ -704,12 +706,31 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
             conn.commit()
             conn.close()
             st.success("Database berhasil dikosongkan.")
+        if st.button("Hapus Database"):
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("DROP TABLE pegawai")
+            cur.execute("DROP TABLE cabang")
+            conn.commit()
+            conn.close()
+            st.success("Database berhasil dikosongkan.")
 
 kategori_aktif = st.session_state.kategori
 if kategori_aktif != "HOME":
     fmt_fungsi = KAT_CONFIG[kategori_aktif]["fmt"]
     label_utama = KAT_CONFIG[kategori_aktif]["score_label"]
     label_kedua = KAT_CONFIG[kategori_aktif]["sec_label"]
+            # --- PERBAIKAN LOGIKA SUMMARY KARTU ---
+
+
+
+
+    # --- INJEKSI KHUSUS CABANG TRANSAKSI ---
+    # Memastikan UI Cabang menampilkan Poin, bukan Persentase
+    if st.session_state.view == "cabang" and kategori_aktif == "TRANSAKSI":
+        fmt_fungsi = fmt_num
+        label_utama = "Total Poin"
+        label_kedua = "Poin On Us"
 
 
 # ---------------------------
@@ -769,24 +790,24 @@ def render_profil_pegawai(nip):
     html_merchant = "<div class='detail-grid'>" + "".join([f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>" for icon, title, val in cards_merchant]) + "</div>"
     st.markdown(html_merchant, unsafe_allow_html=True)
 
+# Di dalam render_profil_pegawai (Sekitar baris 570)
+    
     st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_transaksi}</span></h4>", unsafe_allow_html=True)
 
-    # 1. Ambil nilai dasar (menggunakan .get untuk menghindari KeyError)
     poin_on_us = r.get("poin_on_us", 0)
     poin_off_us = r.get("poin_off_us", 0)
-
-    # 2. Perhitungan Transaksi
-    trx_on_us = poin_on_us / 5
-    trx_off_us = (-1)*(poin_off_us / 5)
+    
+    # Ambil langsung dari data baru (tidak lagi dibagi 5)
+    trx_on_us = r.get("frek_on_us", 0)
+    trx_off_us = r.get("frek_off_us", 0)
     total_trx = trx_on_us + trx_off_us
 
-    # 3. Perhitungan Persentase (% On Us)
+    # Perhitungan Persentase (% On Us) yang lebih aman
     if total_trx > 0:
         pct_on_us = trx_on_us / total_trx
     else:
         pct_on_us = 0.0
 
-# Ganti bagian ini di dalam fungsi render_profil_pegawai
     if pct_on_us < 0.80:
         kebutuhan_val = int((0.8 * total_trx - trx_on_us) / 0.2)
         kebutuhan_display = (
@@ -800,19 +821,19 @@ def render_profil_pegawai(nip):
             "<span>Jaga agar selalu bertransaksi On Us</span>"
         )
 
-    # 5. Susun List Kartu
+    # Susun List Kartu
     cards_transaksi = [
         ("📈", "Total Poin", fmt_num(r.get("total_poin_transaksi", 0))),
         ("🏦", "Poin On Us", fmt_num(poin_on_us)),
         ("🌍", "Poin Off Us", fmt_num(poin_off_us)),
-        ("📦", "Total Trx", fmt_num(int(total_trx))),    # Dikonversi ke int agar tidak desimal
+        ("📦", "Total Trx", fmt_num(int(total_trx))), 
         ("🔄", "Trx On Us", fmt_num(int(trx_on_us))),
         ("🌐", "Trx Off Us", fmt_num(int(trx_off_us))),
         ("📊", "% On Us", f"{pct_on_us:.1%}"),
         ("🎯", "% Target", "80.0%"),
-        ("💡", "Kebutuhan", kebutuhan_display)           # Menampilkan angka atau "Tercapai"
+        ("💡", "Kebutuhan", kebutuhan_display)  
     ]
-# Render Grid HTML
+    
     html_transaksi = "<div class='detail-grid'>" + "".join([
         f"<div class='detail-card{' highlight-card' if title == 'Kebutuhan' else ''}'>"
         f"<div class='detail-icon'>{icon}</div>"
@@ -821,8 +842,6 @@ def render_profil_pegawai(nip):
         f"</div>" 
         for icon, title, val in cards_transaksi
     ]) + "</div>"
-
-
     st.markdown(html_transaksi, unsafe_allow_html=True)
     # html_transaksi = "<div class='detail-grid'>" + "".join([f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>" for icon, title, val in cards_transaksi]) + "</div>"
     # st.markdown(html_transaksi, unsafe_allow_html=True)
@@ -999,7 +1018,10 @@ if st.session_state.kategori == "HOME" and st.session_state.view not in ["detail
         st.markdown(f"<h3 style='color: var(--accent); margin-top: 30px;'>📊 KATEGORI {kat}</h3>", unsafe_allow_html=True)
         df_c = get_cabang_leaderboard(kat)
         df_p = get_pegawai("ALL", kat)
-        fmt_fn = KAT_CONFIG[kat]["fmt"]
+        
+        # Pisahkan formatter karena TRANSAKSI cabang dan pegawai beda metrik
+        fmt_fn_p = KAT_CONFIG[kat]["fmt"]
+        fmt_fn_c = fmt_num if kat == "TRANSAKSI" else KAT_CONFIG[kat]["fmt"]
         
         df_c_active = df_c
         df_p_active = df_p
@@ -1015,12 +1037,14 @@ if st.session_state.kategori == "HOME" and st.session_state.view not in ["detail
         bot_p = df_p_active.tail(3).iloc[::-1] if not df_p_active.empty else df_p.tail(3).iloc[::-1]
         
         c1, c2 = st.columns(2)
-        with c1: st.markdown(render_mini_list(f"Top 3 Cabang {kat}", top_c, "unit", "area", "total_balance", fmt_fn, False), unsafe_allow_html=True)
-        with c2: st.markdown(render_mini_list(f"Bot 3 Cabang {kat}", bot_c, "unit", "area", "total_balance", fmt_fn, True), unsafe_allow_html=True)
+        # Gunakan fmt_fn_c untuk Cabang
+        with c1: st.markdown(render_mini_list(f"Top 3 Cabang {kat}", top_c, "unit", "area", "total_balance", fmt_fn_c, False), unsafe_allow_html=True)
+        with c2: st.markdown(render_mini_list(f"Bot 3 Cabang {kat}", bot_c, "unit", "area", "total_balance", fmt_fn_c, True), unsafe_allow_html=True)
             
         p1, p2 = st.columns(2)
-        with p1: st.markdown(render_mini_list(f"Top 3 Pegawai {kat}", top_p, "nama", "unit", "end_balance", fmt_fn, False), unsafe_allow_html=True)
-        with p2: st.markdown(render_mini_list(f"Bot 3 Pegawai {kat}", bot_p, "nama", "unit", "end_balance", fmt_fn, True), unsafe_allow_html=True)
+        # Gunakan fmt_fn_p untuk Pegawai
+        with p1: st.markdown(render_mini_list(f"Top 3 Pegawai {kat}", top_p, "nama", "unit", "end_balance", fmt_fn_p, False), unsafe_allow_html=True)
+        with p2: st.markdown(render_mini_list(f"Bot 3 Pegawai {kat}", bot_p, "nama", "unit", "end_balance", fmt_fn_p, True), unsafe_allow_html=True)
         st.markdown("<hr style='border-color: rgba(255,255,255,0.06); margin: 10px 0;'>", unsafe_allow_html=True)
 
 # ---------------------------
@@ -1216,12 +1240,25 @@ if st.session_state.view == "pegawai":
     else: st.session_state.kode = chosen
 
     dfp_all = get_pegawai(st.session_state.kode, kategori_aktif)
+
     
     if dfp_all.empty:
         st.warning("Tidak ada pegawai untuk filter ini.")
     else:
         total_pegawai = len(dfp_all)
-        total_balance = dfp_all["end_balance"].sum()
+
+        # --- PERBAIKAN LOGIKA SUMMARY KARTU ---
+        if kategori_aktif == "TRANSAKSI":
+            # Khusus Transaksi: Tampilkan total poin murni, bukan jumlah persentase
+            val_akumulasi = dfp_all["total_poin_transaksi"].sum()
+            label_akumulasi = "Total Poin"
+            fmt_akumulasi = fmt_num  # Gunakan format angka biasa (bukan %)
+        else:
+            # Kategori Lainnya (Livin, Merchant): Tetap normal
+            val_akumulasi = dfp_all["end_balance"].sum()
+            label_akumulasi = f"Akumulasi {label_utama}"
+            fmt_akumulasi = fmt_fungsi
+
         avg_balance = dfp_all["end_balance"].mean()
         total_cif = dfp_all["cif_akuisisi"].sum()
         
@@ -1236,8 +1273,8 @@ if st.session_state.view == "pegawai":
                 <div class="stat-value">{total_pegawai}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-title">Akumulasi {label_utama}</div>
-                <div class="stat-value" style="color:var(--accent);">{fmt_fungsi(total_balance)}</div>
+                <div class="stat-title">{label_akumulasi}</div>
+                <div class="stat-value" style="color:var(--accent);">{fmt_akumulasi(val_akumulasi)}</div>
             </div>
             <div class="stat-card">
                 <div class="stat-title">Rata-rata {label_utama}</div>
