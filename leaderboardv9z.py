@@ -59,11 +59,11 @@ KAT_CONFIG = {
         "fmt": fmt_num
     },
     "TRANSAKSI": {
-        "score_col": "total_poin_transaksi",
-        "score_label": "Total Poin",
-        "sec_col": "poin_on_us",
-        "sec_label": "Poin On Us",
-        "fmt": fmt_num
+        "score_col": "pct_on_us", 
+        "score_label": "% On Us",
+        "sec_col": "total_poin_transaksi",
+        "sec_label": "Total Poin",
+        "fmt": fmt_pct 
     }
 }
 
@@ -107,6 +107,9 @@ def init_db():
         total_poin_transaksi REAL DEFAULT 0,
         poin_on_us REAL DEFAULT 0,
         poin_off_us REAL DEFAULT 0,
+        frek_on_us REAL DEFAULT 0,
+        frek_off_us REAL DEFAULT 0,
+        pct_on_us REAL DEFAULT 0,
         FOREIGN KEY (kode_cabang) REFERENCES cabang(kode_cabang)
     )
     """)
@@ -130,16 +133,26 @@ def get_cabang_leaderboard(kategori="LIVIN"):
     sc = conf["score_col"]
     se = conf["sec_col"]
 
+    if kategori == "TRANSAKSI":
+        # KHUSUS CABANG: Kembalikan ke akumulasi poin
+        sc_expr = "SUM(p.total_poin_transaksi)"
+        se_expr = "SUM(p.poin_on_us)"
+        avg_sc_expr = "0" 
+    else:
+        sc_expr = f"SUM(p.{sc})"
+        se_expr = f"SUM(p.{se})"
+        avg_sc_expr = f"AVG(p.{sc})"
+
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(f"""
         SELECT k.kode_cabang,
                COALESCE(c.unit, k.kode_cabang) AS unit,
                COALESCE(c.area, '(Unknown)') AS area,
                COALESCE(c.kelas_cabang, '-') AS kelas_cabang,
-               IFNULL(SUM(p.{sc}),0) AS total_balance,
+               IFNULL({sc_expr},0) AS total_balance,
                IFNULL(COUNT(p.nip),0) AS jumlah_pegawai,
-               IFNULL(AVG(p.{sc}),0) AS rata_rata_saldo,
-               IFNULL(SUM(p.{se}),0) AS total_cif
+               IFNULL({avg_sc_expr},0) AS rata_rata_saldo,
+               IFNULL({se_expr},0) AS total_cif
         FROM (
           SELECT kode_cabang FROM cabang 
           WHERE kode_cabang IS NOT NULL AND TRIM(kode_cabang) != '' AND LOWER(kode_cabang) NOT IN ('unknown', 'nan')
@@ -154,27 +167,32 @@ def get_cabang_leaderboard(kategori="LIVIN"):
     """, conn)
     conn.close()
     return df
-
 def get_pegawai(kode, kategori="LIVIN"):
     conf = KAT_CONFIG[kategori]
     sc = conf["score_col"]
     se = conf["sec_col"]
 
+    if kategori == "TRANSAKSI":
+        # Gunakan frekuensi asli untuk persentase pegawai
+        sc_expr = "(CASE WHEN (frek_on_us + frek_off_us) > 0 THEN (frek_on_us / (frek_on_us + frek_off_us)) * 100.0 ELSE 0 END)"
+        se_expr = "total_poin_transaksi"
+    else:
+        sc_expr = sc
+        se_expr = se
+
     conn = sqlite3.connect(DB_PATH)
-    
-    # Tambahkan filter pengecualian langsung di base_query
     base_query = f"""
         SELECT nip, nama, kode_cabang, unit, 
-               IFNULL({sc},0) AS end_balance, 
-               IFNULL({se},0) AS cif_akuisisi, 
-               posisi, area, nama_cabang, avatar_url
+               IFNULL({sc_expr},0) AS end_balance, 
+               IFNULL({se_expr},0) AS cif_akuisisi, 
+               posisi, area, nama_cabang, avatar_url,
+               total_poin_transaksi, poin_on_us, poin_off_us, frek_on_us, frek_off_us
         FROM pegawai
         WHERE kode_cabang IS NOT NULL 
           AND TRIM(kode_cabang) != '' 
           AND LOWER(kode_cabang) NOT IN ('unknown', 'nan')
     """
     
-    # Klausa selanjutnya diganti menggunakan "AND" (bukan "WHERE" lagi)
     if kode is None or kode == "ALL":
         df = pd.read_sql_query(base_query + " ORDER BY end_balance DESC, cif_akuisisi DESC", conn)
     elif len(kode) == 3:
@@ -187,7 +205,6 @@ def get_pegawai(kode, kategori="LIVIN"):
             df = pd.read_sql_query(base_query + " AND area = ? ORDER BY end_balance DESC, cif_akuisisi DESC", conn, params=(kode,))
     conn.close()
     return df
-
 def normalize_val(x):
     if pd.isna(x) or x is None: return 0
     s = str(x).strip().replace(',', '.')
@@ -265,6 +282,35 @@ body, .stApp {{ font-family: 'Inter', sans-serif; background: linear-gradient(18
 .stat-title {{ font-size: 0.75rem; opacity: 0.75; margin-bottom: 4px; }}
 .stat-value {{ font-size: 1.25rem; font-weight: 800; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; }}
 .stat-extra {{ font-size: 0.75rem; opacity: 0.5; }}
+
+/* Cari bagian .highlight-card dan ganti dengan ini */
+.highlight-card {{
+    background: linear-gradient(135deg, #FF7A00, #FF9900) !important;
+    border: 2px solid #FFD180 !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 8px 25px rgba(255, 122, 0, 0.4) !important;
+    transform: scale(1.02);
+    /* Tambahan agar isi konten di dalamnya rapi */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}}
+
+/* Pastikan title di dalam kartu highlight berwarna putih cerah */
+.highlight-card .detail-title {{ 
+    color: #FFF3E0 !important; 
+    opacity: 1 !important;
+}}
+
+/* Tambahkan styling khusus untuk deskripsi di bawah angka agar tidak terlalu kecil/buram */
+.highlight-card .detail-value span {{
+    font-size: 0.75rem !important;
+    font-weight: normal !important;
+    color: #FFF3E0 !important;
+    display: block;
+    margin-top: 5px;
+    line-height: 1.2;
+}}
 
 .detail-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }}
 .detail-card {{ padding: 16px; border-radius: 16px; color: #fff; background: linear-gradient(135deg, rgba(32,51,160,0.85), rgba(72,12,168,0.90)); box-shadow: 0 8px 24px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); }}
@@ -368,7 +414,7 @@ if not st.session_state.logged_in:
     with col_login:
         with st.form("login_form"):
             nip_input = st.text_input("NIP Pegawai")
-            submit_btn = st.form_submit_button("Masuk 🚀", use_container_width=True)
+            submit_btn = st.form_submit_button("Masuk 🚀", width='stretch')
             
             if submit_btn:
                 nip_clean = nip_input.strip()
@@ -430,31 +476,31 @@ st.markdown("""
 # UBAH DISINI: Jadikan 5 kolom
 k1, k2, k3, k4, k5 = st.columns(5)
 
-if k1.button("🏠 HOME", use_container_width=True, type="primary" if st.session_state.kategori == "HOME" and st.session_state.view != "pencarian" else "secondary"): 
+if k1.button("🏠 HOME", width='stretch', type="primary" if st.session_state.kategori == "HOME" and st.session_state.view != "pencarian" else "secondary"): 
     st.session_state.kategori = "HOME"
     st.session_state.view = "home"  
     st.rerun()
 
-if k2.button("📱 LIVIN", use_container_width=True, type="primary" if st.session_state.kategori == "LIVIN" and st.session_state.view != "pencarian" else "secondary"): 
+if k2.button("📱 LIVIN", width='stretch', type="primary" if st.session_state.kategori == "LIVIN" and st.session_state.view != "pencarian" else "secondary"): 
     st.session_state.kategori = "LIVIN"
     if st.session_state.view in ["home", "pencarian"]:
         st.session_state.view = "cabang"
     st.rerun()
 
-if k3.button("🏪 MERCHANT", use_container_width=True, type="primary" if st.session_state.kategori == "MERCHANT" and st.session_state.view != "pencarian" else "secondary"): 
+if k3.button("🏪 MERCHANT", width='stretch', type="primary" if st.session_state.kategori == "MERCHANT" and st.session_state.view != "pencarian" else "secondary"): 
     st.session_state.kategori = "MERCHANT"
     if st.session_state.view in ["home", "pencarian"]:
         st.session_state.view = "cabang"
     st.rerun()
 
-if k4.button("💳 TRANSAKSI", use_container_width=True, type="primary" if st.session_state.kategori == "TRANSAKSI" and st.session_state.view != "pencarian" else "secondary"): 
+if k4.button("💳 TRANSAKSI", width='stretch', type="primary" if st.session_state.kategori == "TRANSAKSI" and st.session_state.view != "pencarian" else "secondary"): 
     st.session_state.kategori = "TRANSAKSI"
     if st.session_state.view in ["home", "pencarian"]:
         st.session_state.view = "cabang"
     st.rerun()
 
 # TAMBAHKAN DISINI: Tombol Cari Profil disejajarkan
-if k5.button("🔍 CARI", use_container_width=True, type="primary" if st.session_state.view == "pencarian" else "secondary"):
+if k5.button("🔍 CARI", width='stretch', type="primary" if st.session_state.view == "pencarian" else "secondary"):
     st.session_state.view = "pencarian"
     st.session_state.kategori = "HOME"
     st.rerun()
@@ -491,7 +537,7 @@ for i, btn in enumerate(menu_buttons):
     
     if btn == "cabang":
         btn_cabang_type = "primary" if st.session_state.view == "cabang" else "secondary"
-        if col.button("🏢 Leaderboard Cabang", use_container_width=True, type=btn_cabang_type):
+        if col.button("🏢 Leaderboard Cabang", width='stretch', type=btn_cabang_type):
             st.session_state.view = "cabang"
             st.session_state.kode = None
             st.session_state.page_num = 1
@@ -499,7 +545,7 @@ for i, btn in enumerate(menu_buttons):
             
     elif btn == "pegawai":
         btn_pegawai_type = "primary" if st.session_state.view == "pegawai" else "secondary"
-        if col.button("👨‍💼 Leaderboard Pegawai", use_container_width=True, type=btn_pegawai_type):
+        if col.button("👨‍💼 Leaderboard Pegawai", width='stretch', type=btn_pegawai_type):
             st.session_state.view = "pegawai"
             st.session_state.kode = "ALL"
             st.rerun()
@@ -508,12 +554,12 @@ for i, btn in enumerate(menu_buttons):
             
     elif btn == "admin":
         btn_admin_type = "primary" if st.session_state.show_update_panel else "secondary"
-        if col.button("⚙️ Admin Panel", use_container_width=True, type=btn_admin_type):
+        if col.button("⚙️ Admin Panel", width='stretch', type=btn_admin_type):
             st.session_state.show_update_panel = not st.session_state.show_update_panel
             st.rerun()
             
     elif btn == "logout":
-        if col.button("🚪 Logout", help="Keluar/Logout", use_container_width=True):
+        if col.button("🚪 Logout", help="Keluar/Logout", width='stretch'):
             st.session_state.clear()
             st.rerun()
 # ---------------------------
@@ -537,12 +583,12 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
             GROUP BY nip, nama 
             ORDER BY 'Total Kunjungan' DESC
         """, conn)
-        st.dataframe(df_summary, use_container_width=True, hide_index=True)
+        st.dataframe(df_summary, width='stretch', hide_index=True)
         
         # Tabel Log Mentah (100 log terakhir)
         st.markdown("#### 🕵️ 100 Riwayat Akses Terakhir")
         df_log = pd.read_sql_query("SELECT waktu, nip, nama, ip_address FROM access_log ORDER BY id DESC LIMIT 100", conn)
-        st.dataframe(df_log, use_container_width=True, hide_index=True)
+        st.dataframe(df_log, width='stretch', hide_index=True)
         
         conn.close()
         st.markdown("<hr>", unsafe_allow_html=True)
@@ -603,6 +649,7 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                                 master_data[nip]['total_referral_edc'] = normalize_val(r[find_col(df_m, ['total referral edc'])])
 
                     # 3. Sheet TRANSAKSI
+# 3. Sheet TRANSAKSI
                     if "GMM TRANSAKSI" in xls:
                         df_t = xls["GMM TRANSAKSI"]
                         c_nip = find_col(df_t, ['nip'])
@@ -615,6 +662,11 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                                 master_data[nip]['total_poin_transaksi'] = normalize_val(r[find_col(df_t, ['total poin transaksi'])])
                                 master_data[nip]['poin_on_us'] = normalize_val(r[find_col(df_t, ['poin on us'])])
                                 master_data[nip]['poin_off_us'] = normalize_val(r[find_col(df_t, ['poin off us'])])
+                                
+                                # AMBIL DATA FREKUENSI SESUAI KOLOM BARU
+                                master_data[nip]['frek_on_us'] = normalize_val(r[find_col(df_t, ['frek on us'])])
+                                master_data[nip]['frek_off_us'] = normalize_val(r[find_col(df_t, ['frek off us'])])
+                                master_data[nip]['pct_on_us'] = r[find_col(df_t, ['pct on us'])]
 
                     inserted = 0
                     for nip, d in master_data.items():
@@ -623,6 +675,7 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                         d.setdefault('cif_sudah_transaksi', 0); d.setdefault('rata_rata', 0)
                         d.setdefault('total_referral_livin', 0); d.setdefault('total_referral_edc', 0)
                         d.setdefault('total_poin_transaksi', 0); d.setdefault('poin_on_us', 0); d.setdefault('poin_off_us', 0)
+                        d.setdefault('frek_on_us', 0); d.setdefault('frek_off_us', 0); d.setdefault('pct_on_us', 0)
 
                         if d['kode_cabang']:
                             cur.execute("INSERT OR IGNORE INTO cabang (kode_cabang, unit, area, kelas_cabang) VALUES (?, ?, ?, ?)",
@@ -631,11 +684,11 @@ if st.session_state.show_update_panel and st.session_state.get("is_admin", False
                         cur.execute("""
                             INSERT OR REPLACE INTO pegawai 
                             (nip, nama, kode_cabang, unit, area, posisi, end_balance, cif_akuisisi, cif_setor, cif_sudah_transaksi, rata_rata,
-                             total_referral_livin, total_referral_edc, total_poin_transaksi, poin_on_us, poin_off_us)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             total_referral_livin, total_referral_edc, total_poin_transaksi, poin_on_us, poin_off_us, frek_on_us, frek_off_us, pct_on_us)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (d['nip'], d['nama'], d['kode_cabang'], d.get('unit'), d.get('area'), d.get('posisi',''), 
                               d['end_balance'], d['cif_akuisisi'], d['cif_setor'], d['cif_sudah_transaksi'], d['rata_rata'],
-                              d['total_referral_livin'], d['total_referral_edc'], d['total_poin_transaksi'], d['poin_on_us'], d['poin_off_us']))
+                              d['total_referral_livin'], d['total_referral_edc'], d['total_poin_transaksi'], d['poin_on_us'], d['poin_off_us'], d['frek_on_us'], d['frek_off_us'], d['pct_on_us']))
                         inserted += 1
 
                     conn.commit()
@@ -659,6 +712,17 @@ if kategori_aktif != "HOME":
     fmt_fungsi = KAT_CONFIG[kategori_aktif]["fmt"]
     label_utama = KAT_CONFIG[kategori_aktif]["score_label"]
     label_kedua = KAT_CONFIG[kategori_aktif]["sec_label"]
+            # --- PERBAIKAN LOGIKA SUMMARY KARTU ---
+
+
+
+
+    # --- INJEKSI KHUSUS CABANG TRANSAKSI ---
+    # Memastikan UI Cabang menampilkan Poin, bukan Persentase
+    if st.session_state.view == "cabang" and kategori_aktif == "TRANSAKSI":
+        fmt_fungsi = fmt_num
+        label_utama = "Total Poin"
+        label_kedua = "Poin On Us"
 
 
 # ---------------------------
@@ -718,66 +782,58 @@ def render_profil_pegawai(nip):
     html_merchant = "<div class='detail-grid'>" + "".join([f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>" for icon, title, val in cards_merchant]) + "</div>"
     st.markdown(html_merchant, unsafe_allow_html=True)
 
+# Di dalam render_profil_pegawai (Sekitar baris 570)
+    
     st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_transaksi}</span></h4>", unsafe_allow_html=True)
 
-    # 1. Ambil nilai dasar (menggunakan .get untuk menghindari KeyError)
     poin_on_us = r.get("poin_on_us", 0)
     poin_off_us = r.get("poin_off_us", 0)
-
-    # 2. Perhitungan Transaksi
-    trx_on_us = poin_on_us / 5
-    trx_off_us = (-1)*(poin_off_us / 5)
+    
+    # Ambil langsung dari data baru (tidak lagi dibagi 5)
+    trx_on_us = r.get("frek_on_us", 0)
+    trx_off_us = r.get("frek_off_us", 0)
     total_trx = trx_on_us + trx_off_us
 
-    # 3. Perhitungan Persentase (% On Us)
+    # Perhitungan Persentase (% On Us) yang lebih aman
     if total_trx > 0:
         pct_on_us = trx_on_us / total_trx
     else:
         pct_on_us = 0.0
 
-    # 4. Logika Kebutuhan
-    if pct_on_us <= 0.80:
-        # Rumus: (80% * (Total Trx) - Trx On Us) / (100% - 80%)
-        # 100% - 80% = 0.2
+    if pct_on_us < 0.80:
         kebutuhan_val = int((0.8 * total_trx - trx_on_us) / 0.2)
-        # Format menggunakan fungsi fmt_num milik Anda
         kebutuhan_display = (
-            f"{kebutuhan_val}<br>"
-            f"<span style='font-size:0.7rem; font-weight:normal; color:rgba(255,255,255,0.7);'>"
-            f"Kamu perlu {kebutuhan_val} kali transaksi On Us agar mencapai 80% <br>"
+            f"{kebutuhan_val}"
+            f"<span>Kamu perlu {kebutuhan_val} kali transaksi On Us agar mencapai 80%<br>"
             f"& Tanpa Menambah Transaksi Off Us</span>"
         )
     else:
-        # Jika sudah >= 80%, berikan status Tercapai
         kebutuhan_display = (
-            "Tercapai 🎉<br>"
-            "<span style='font-size:0.7rem; font-weight:normal; color:rgba(255,255,255,0.7);'>"
-            "Jaga agar selalu bertransaksi On Us</span>"
+            "Tercapai 🎉"
+            "<span>Jaga agar selalu bertransaksi On Us</span>"
         )
 
-    # 5. Susun List Kartu
+    # Susun List Kartu
     cards_transaksi = [
         ("📈", "Total Poin", fmt_num(r.get("total_poin_transaksi", 0))),
         ("🏦", "Poin On Us", fmt_num(poin_on_us)),
         ("🌍", "Poin Off Us", fmt_num(poin_off_us)),
-        ("📦", "Total Trx", fmt_num(int(total_trx))),    # Dikonversi ke int agar tidak desimal
+        ("📦", "Total Trx", fmt_num(int(total_trx))), 
         ("🔄", "Trx On Us", fmt_num(int(trx_on_us))),
         ("🌐", "Trx Off Us", fmt_num(int(trx_off_us))),
         ("📊", "% On Us", f"{pct_on_us:.1%}"),
         ("🎯", "% Target", "80.0%"),
-        ("💡", "Kebutuhan", kebutuhan_display)           # Menampilkan angka atau "Tercapai"
+        ("💡", "Kebutuhan", kebutuhan_display)  
     ]
-    # Render Grid HTML dengan logika class 'full-width'
+    
     html_transaksi = "<div class='detail-grid'>" + "".join([
-        # Tambahkan class 'full-width' jika title-nya adalah 'Kebutuhan'
-        f"<div class='detail-card{' full-width' if title == 'Kebutuhan' else ''}'>"
+        f"<div class='detail-card{' highlight-card' if title == 'Kebutuhan' else ''}'>"
         f"<div class='detail-icon'>{icon}</div>"
         f"<div class='detail-title'>{title}</div>"
         f"<div class='detail-value'>{val}</div>"
         f"</div>" 
         for icon, title, val in cards_transaksi
     ]) + "</div>"
-
     st.markdown(html_transaksi, unsafe_allow_html=True)
     # html_transaksi = "<div class='detail-grid'>" + "".join([f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>" for icon, title, val in cards_transaksi]) + "</div>"
     # st.markdown(html_transaksi, unsafe_allow_html=True)
@@ -833,19 +889,19 @@ def render_profil_cabang(kode_cabang):
     # --- TAMBAHAN: Tombol Detail Kategori ---
     col_l, col_m, col_t = st.columns(3)
     
-    if col_l.button("📱 Detail LIVIN", use_container_width=True, key=f"detail_livin_{r['kode_cabang']}"):
+    if col_l.button("📱 Detail LIVIN", width='stretch', key=f"detail_livin_{r['kode_cabang']}"):
         st.session_state.kategori = "LIVIN"
         st.session_state.view = "pegawai"
         st.session_state.kode = r['kode_cabang']
         st.rerun()
 
-    if col_m.button("🏪 Detail MERCHANT", use_container_width=True, key=f"detail_merchant_{r['kode_cabang']}"):
+    if col_m.button("🏪 Detail MERCHANT", width='stretch', key=f"detail_merchant_{r['kode_cabang']}"):
         st.session_state.kategori = "MERCHANT"
         st.session_state.view = "pegawai"
         st.session_state.kode = r['kode_cabang']
         st.rerun()
 
-    if col_t.button("💳 Detail TRANSAKSI", use_container_width=True, key=f"detail_transaksi_{r['kode_cabang']}"):
+    if col_t.button("💳 Detail TRANSAKSI", width='stretch', key=f"detail_transaksi_{r['kode_cabang']}"):
         st.session_state.kategori = "TRANSAKSI"
         st.session_state.view = "pegawai"
         st.session_state.kode = r['kode_cabang']
@@ -954,7 +1010,10 @@ if st.session_state.kategori == "HOME" and st.session_state.view not in ["detail
         st.markdown(f"<h3 style='color: var(--accent); margin-top: 30px;'>📊 KATEGORI {kat}</h3>", unsafe_allow_html=True)
         df_c = get_cabang_leaderboard(kat)
         df_p = get_pegawai("ALL", kat)
-        fmt_fn = KAT_CONFIG[kat]["fmt"]
+        
+        # Pisahkan formatter karena TRANSAKSI cabang dan pegawai beda metrik
+        fmt_fn_p = KAT_CONFIG[kat]["fmt"]
+        fmt_fn_c = fmt_num if kat == "TRANSAKSI" else KAT_CONFIG[kat]["fmt"]
         
         df_c_active = df_c
         df_p_active = df_p
@@ -970,12 +1029,14 @@ if st.session_state.kategori == "HOME" and st.session_state.view not in ["detail
         bot_p = df_p_active.tail(3).iloc[::-1] if not df_p_active.empty else df_p.tail(3).iloc[::-1]
         
         c1, c2 = st.columns(2)
-        with c1: st.markdown(render_mini_list(f"Top 3 Cabang {kat}", top_c, "unit", "area", "total_balance", fmt_fn, False), unsafe_allow_html=True)
-        with c2: st.markdown(render_mini_list(f"Bot 3 Cabang {kat}", bot_c, "unit", "area", "total_balance", fmt_fn, True), unsafe_allow_html=True)
+        # Gunakan fmt_fn_c untuk Cabang
+        with c1: st.markdown(render_mini_list(f"Top 3 Cabang {kat}", top_c, "unit", "area", "total_balance", fmt_fn_c, False), unsafe_allow_html=True)
+        with c2: st.markdown(render_mini_list(f"Bot 3 Cabang {kat}", bot_c, "unit", "area", "total_balance", fmt_fn_c, True), unsafe_allow_html=True)
             
         p1, p2 = st.columns(2)
-        with p1: st.markdown(render_mini_list(f"Top 3 Pegawai {kat}", top_p, "nama", "unit", "end_balance", fmt_fn, False), unsafe_allow_html=True)
-        with p2: st.markdown(render_mini_list(f"Bot 3 Pegawai {kat}", bot_p, "nama", "unit", "end_balance", fmt_fn, True), unsafe_allow_html=True)
+        # Gunakan fmt_fn_p untuk Pegawai
+        with p1: st.markdown(render_mini_list(f"Top 3 Pegawai {kat}", top_p, "nama", "unit", "end_balance", fmt_fn_p, False), unsafe_allow_html=True)
+        with p2: st.markdown(render_mini_list(f"Bot 3 Pegawai {kat}", bot_p, "nama", "unit", "end_balance", fmt_fn_p, True), unsafe_allow_html=True)
         st.markdown("<hr style='border-color: rgba(255,255,255,0.06); margin: 10px 0;'>", unsafe_allow_html=True)
 
 # ---------------------------
@@ -1027,7 +1088,7 @@ if st.session_state.view == "cabang":
         with col1:
             st.markdown(f"<div class='small-muted' style='padding-left:12px;'>{label_kedua}: <span style='color:white;font-weight:bold;'>{fmt_num(r['total_cif'])}</span></div>", unsafe_allow_html=True)
         with col2:
-            if st.button(f"Detail ➔", key=f"btn_top_{r['kode_cabang']}", use_container_width=True):
+            if st.button(f"Detail ➔", key=f"btn_top_{r['kode_cabang']}", width='stretch'):
                 st.session_state.view = "pegawai"
                 st.session_state.kode = r["kode_cabang"]
                 st.rerun()
@@ -1068,7 +1129,7 @@ if st.session_state.view == "cabang":
         with col2:
             # Spacer agar tombol sejajar dengan tengah teks
             st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-            if st.button("Lihat ➔", key=f"btn_cb_{kode_cb}_{rank}", use_container_width=True):
+            if st.button("Lihat ➔", key=f"btn_cb_{kode_cb}_{rank}", width='stretch'):
                 st.session_state.view = "pegawai"
                 st.session_state.kode = kode_cb
                 st.rerun()
@@ -1171,12 +1232,25 @@ if st.session_state.view == "pegawai":
     else: st.session_state.kode = chosen
 
     dfp_all = get_pegawai(st.session_state.kode, kategori_aktif)
+
     
     if dfp_all.empty:
         st.warning("Tidak ada pegawai untuk filter ini.")
     else:
         total_pegawai = len(dfp_all)
-        total_balance = dfp_all["end_balance"].sum()
+
+        # --- PERBAIKAN LOGIKA SUMMARY KARTU ---
+        if kategori_aktif == "TRANSAKSI":
+            # Khusus Transaksi: Tampilkan total poin murni, bukan jumlah persentase
+            val_akumulasi = dfp_all["total_poin_transaksi"].sum()
+            label_akumulasi = "Total Poin"
+            fmt_akumulasi = fmt_num  # Gunakan format angka biasa (bukan %)
+        else:
+            # Kategori Lainnya (Livin, Merchant): Tetap normal
+            val_akumulasi = dfp_all["end_balance"].sum()
+            label_akumulasi = f"Akumulasi {label_utama}"
+            fmt_akumulasi = fmt_fungsi
+
         avg_balance = dfp_all["end_balance"].mean()
         total_cif = dfp_all["cif_akuisisi"].sum()
         
@@ -1191,8 +1265,8 @@ if st.session_state.view == "pegawai":
                 <div class="stat-value">{total_pegawai}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-title">Akumulasi {label_utama}</div>
-                <div class="stat-value" style="color:var(--accent);">{fmt_fungsi(total_balance)}</div>
+                <div class="stat-title">{label_akumulasi}</div>
+                <div class="stat-value" style="color:var(--accent);">{fmt_akumulasi(val_akumulasi)}</div>
             </div>
             <div class="stat-card">
                 <div class="stat-title">Rata-rata {label_utama}</div>
@@ -1255,7 +1329,7 @@ if st.session_state.view == "pegawai":
             with col2:
                 # Spacer agar tombol sejajar dengan tengah teks
                 st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                if st.button("Detail ➔", key=f"btn_peg_{nip}_{idx}", use_container_width=True):
+                if st.button("Detail ➔", key=f"btn_peg_{nip}_{idx}", width='stretch'):
                     st.session_state.view = "detail_pegawai"
                     st.session_state.detail_nip = nip 
                     st.rerun()
@@ -1264,7 +1338,7 @@ if st.session_state.view == "pegawai":
 
         b1, b2, b3 = st.columns([1,2,1])
 
-        if b1.button("⬅️", use_container_width=True):
+        if b1.button("⬅️", width='stretch'):
             if st.session_state.page_num > 1:
                 st.session_state.page_num -= 1
             else:
@@ -1276,7 +1350,7 @@ if st.session_state.view == "pegawai":
             unsafe_allow_html=True
         )
 
-        if b3.button("➡️", use_container_width=True):
+        if b3.button("➡️", width='stretch'):
             if st.session_state.page_num < total_pages:
                 st.session_state.page_num += 1
             else:
@@ -1295,6 +1369,6 @@ if st.session_state.view == "detail_pegawai":
         render_profil_pegawai(nip)
         
         st.markdown("<br><hr style='border-color:rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
-        if st.button("⬅️ Kembali ke Daftar Pegawai", use_container_width=True):
+        if st.button("⬅️ Kembali ke Daftar Pegawai", width='stretch'):
             st.session_state.view = "pegawai"
             st.rerun()
