@@ -70,8 +70,15 @@ KAT_CONFIG = {
 # ---------------------------
 # Init DB & queries
 # ---------------------------
+# Tambahkan decorator ini agar fungsi hanya dieksekusi sekali per siklus server
+@st.cache_resource
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    # Tambahkan timeout=15.0 agar antre maksimal 15 detik sebelum error
+    conn = sqlite3.connect(DB_PATH, timeout=15.0)
+    
+    # Aktifkan WAL (Write-Ahead Logging) untuk concurrency yang jauh lebih baik
+    conn.execute("PRAGMA journal_mode=WAL;")
+    
     cur = conn.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS cabang (
@@ -127,7 +134,6 @@ def init_db():
     
     conn.commit()
     conn.close()
-
 def get_cabang_leaderboard(kategori="LIVIN"):
     conf = KAT_CONFIG[kategori]
     sc = conf["score_col"]
@@ -385,14 +391,14 @@ def log_visitor(nip, nama):
     except:
         ip_address = "Unknown_IP"
         
-    conn = sqlite3.connect(DB_PATH)
+    # Tambahkan timeout di sini juga
+    conn = sqlite3.connect(DB_PATH, timeout=15.0)
     cur = conn.cursor()
     waktu_sekarang = datetime.now(ZoneInfo("Asia/Makassar")).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute("INSERT INTO access_log (waktu, nip, nama, ip_address) VALUES (?, ?, ?, ?)", 
                 (waktu_sekarang, nip, nama, ip_address))
     conn.commit()
     conn.close()
-
 def get_visit_stats(n):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -469,7 +475,7 @@ st.markdown(f"<div class='header-center'><img src='{LOGO_PATH}' class='logo-img'
 st.markdown("""
 <div class='header-center' style='margin-top: 12px;'>
   <div class='title-pill'>GMM RACEBOARD FASE 3</div>
-  <div class='subtitle-small' style='margin-top: 8px;'>16 April 2026</div>
+  <div class='subtitle-small' style='margin-top: 8px;'>15 April 2026</div>
 </div><br>
 """, unsafe_allow_html=True)
 
