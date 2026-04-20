@@ -8,6 +8,7 @@ import math
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import gspread
 
 # 1. WAJIB DI ATAS: Konfigurasi Page Streamlit untuk Mobile
 st.set_page_config(
@@ -391,14 +392,41 @@ def log_visitor(nip, nama):
     except:
         ip_address = "Unknown_IP"
         
-    # Tambahkan timeout di sini juga
-    conn = sqlite3.connect(DB_PATH, timeout=15.0)
-    cur = conn.cursor()
     waktu_sekarang = datetime.now(ZoneInfo("Asia/Makassar")).strftime("%Y-%m-%d %H:%M:%S")
-    cur.execute("INSERT INTO access_log (waktu, nip, nama, ip_address) VALUES (?, ?, ?, ?)", 
-                (waktu_sekarang, nip, nama, ip_address))
-    conn.commit()
-    conn.close()
+
+    # 1. Simpan ke Database SQLite Lokal
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=15.0)
+        cur = conn.cursor()
+        cur.execute("INSERT INTO access_log (waktu, nip, nama, ip_address) VALUES (?, ?, ?, ?)", 
+                    (waktu_sekarang, nip, nama, ip_address))
+        conn.commit()
+    except Exception as e:
+        print(f"Error SQLite: {e}")
+    finally:
+        conn.close()
+
+    # 2. Simpan ke Google Sheets
+    # 2. Simpan ke Google Sheets
+    try:
+        # Menarik kredensial dari file .streamlit/secrets.toml
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        
+        # SESUAIKAN: Nama file Google Sheet Anda di kiri atas adalah "Log GMM R11"
+        sh = gc.open("Log GMM R11")
+        
+        # SESUAIKAN: Nama tab di pojok kiri bawah adalah "log_access"
+        worksheet = sh.worksheet("log_access")
+        
+        # Siapkan data sebagai list (berurutan sesuai kolom)
+        new_row = [waktu_sekarang, nip, nama, ip_address]
+        
+        # Tambahkan data di baris paling bawah yang kosong
+        worksheet.append_row(new_row)
+        
+    except Exception as e:
+        print(f"Gagal mengirim log ke Google Sheets: {e}")
+    
 def get_visit_stats(n):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -433,7 +461,7 @@ if not st.session_state.logged_in:
                 conn.close()
                 
                 # Cek Admin (Menggunakan NIP Admin Spesifik atau Admin123)
-                if nip_clean == "2502844731" or nip_clean.lower() == "admin123":
+                if nip_clean == st.secrets["admin_nip"] or nip_clean.lower() == st.secrets["admin_pass"]:
                     nama_admin = user_data[0] if user_data else "Administrator"
                     v_count, l_visit = get_visit_stats(nip_clean)
                     st.session_state.logged_in = True
@@ -936,8 +964,24 @@ def render_profil_cabang(kode_cabang):
     html_merchant = "<div class='detail-grid'>" + "".join([f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>" for icon, title, val in cards_merchant]) + "</div>"
     st.markdown(html_merchant, unsafe_allow_html=True)
 
+    poin_on_us = r.get("poin_on_us", 0)
+    poin_off_us = r.get("poin_off_us", 0)
+    
+    # Ambil langsung dari data baru (tidak lagi dibagi 5)
+    trx_on_us = poin_on_us/5
+    trx_off_us = poin_off_us/-5
+    total_trx = trx_on_us + trx_off_us
+
     st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_transaksi}</span></h4>", unsafe_allow_html=True)
-    cards_transaksi = [("📈", "Total Poin", fmt_num(r["total_poin_transaksi"])), ("🛡️", "Poin On Us", fmt_num(r["poin_on_us"])), ("🌐", "Poin Off Us", fmt_num(r["poin_off_us"]))]
+    cards_transaksi = [
+        ("📈", "Total Poin", fmt_num(r.get("total_poin_transaksi", 0))),
+        ("🏦", "Poin On Us", fmt_num(poin_on_us)),
+        ("🌍", "Poin Off Us", fmt_num(poin_off_us)),
+        ("📦", "Total Trx", fmt_num(int(total_trx))), 
+        ("🔄", "Trx On Us", fmt_num(int(trx_on_us))),
+        ("🌐", "Trx Off Us", fmt_num(int(trx_off_us)))
+    ]
+    # cards_transaksi = [("📈", "Total Poin", fmt_num(r["total_poin_transaksi"])), ("🛡️", "Poin On Us", fmt_num(r["poin_on_us"])), ("🌐", "Poin Off Us", fmt_num(r["poin_off_us"]))]
     html_transaksi = "<div class='detail-grid'>" + "".join([f"<div class='detail-card'><div class='detail-icon'>{icon}</div><div class='detail-title'>{title}</div><div class='detail-value'>{val}</div></div>" for icon, title, val in cards_transaksi]) + "</div>"
     st.markdown(html_transaksi, unsafe_allow_html=True)
     return True
