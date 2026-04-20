@@ -781,14 +781,40 @@ def render_profil_pegawai(nip):
 
     r = df_detail.iloc[0]
     
-    def get_global_rank(col_name, score):
+    def get_global_rank(col_name, score, tie_col_name=None, tie_score=None):
         cur = conn.cursor()
-        cur.execute(f"SELECT COUNT(*) + 1 FROM pegawai WHERE {col_name} > ?", (score,))
+        
+        # Mengecek apakah ada parameter tie-breaker yang dimasukkan
+        if tie_col_name is not None and tie_score is not None:
+            query = f"""
+                SELECT COUNT(*) + 1 
+                FROM pegawai 
+                WHERE {col_name} > ? 
+                OR ({col_name} = ? AND {tie_col_name} > ?)
+            """
+            # Masukkan variabel score dua kali (untuk '>' dan '='), lalu tie_score
+            cur.execute(query, (score, score, tie_score))
+        else:
+            # Logika lama untuk kolom tanpa tie-breaker
+            cur.execute(f"SELECT COUNT(*) + 1 FROM pegawai WHERE {col_name} > ?", (score,))
+            
         return cur.fetchone()[0]
 
+
+    # --- Cara Menggunakannya ---
+
+    # Untuk metrik yang normal (tanpa tie-breaker), pemanggilannya tetap sama:
     rank_livin = get_global_rank("end_balance", r["end_balance"])
     rank_merchant = get_global_rank("total_referral_edc", r["total_referral_edc"])
     rank_transaksi = get_global_rank("total_poin_transaksi", r["total_poin_transaksi"])
+
+    # Untuk pct_on_us, kita masukkan total_poin_transaksi sebagai penentu seri:
+    rank_pct_on_us = get_global_rank(
+        col_name="pct_on_us", 
+        score=r["pct_on_us"], 
+        tie_col_name="total_poin_transaksi", 
+        tie_score=r["total_poin_transaksi"]
+    )
     conn.close()
 
     st.subheader(f"Profil Lengkap Pegawai")
@@ -826,7 +852,7 @@ def render_profil_pegawai(nip):
 
 # Di dalam render_profil_pegawai (Sekitar baris 570)
     
-    st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_transaksi}</span></h4>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_pct_on_us}</span></h4>", unsafe_allow_html=True)
 
     poin_on_us = r.get("poin_on_us", 0)
     poin_off_us = r.get("poin_off_us", 0)
@@ -912,6 +938,7 @@ def render_profil_cabang(kode_cabang):
     rank_livin = get_cabang_rank("end_balance", r["end_balance"])
     rank_merchant = get_cabang_rank("total_referral_edc", r["total_referral_edc"])
     rank_transaksi = get_cabang_rank("total_poin_transaksi", r["total_poin_transaksi"])
+    rank_pct_on_us = get_cabang_rank("pct_on_us", r["pct_on_us"])
     conn.close()
 
     st.subheader(f"Profil Lengkap Cabang")
@@ -972,7 +999,7 @@ def render_profil_cabang(kode_cabang):
     trx_off_us = poin_off_us/-5
     total_trx = trx_on_us + trx_off_us
 
-    st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_transaksi}</span></h4>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_pct_on_us}</span></h4>", unsafe_allow_html=True)
     cards_transaksi = [
         ("📈", "Total Poin", fmt_num(r.get("total_poin_transaksi", 0))),
         ("🏦", "Poin On Us", fmt_num(poin_on_us)),
