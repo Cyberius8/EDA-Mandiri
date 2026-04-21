@@ -503,7 +503,7 @@ st.markdown(f"<div class='header-center'><img src='{LOGO_PATH}' class='logo-img'
 st.markdown("""
 <div class='header-center' style='margin-top: 12px;'>
   <div class='title-pill'>GMM RACEBOARD FASE 3</div>
-  <div class='subtitle-small' style='margin-top: 8px;'>19 April 2026</div>
+  <div class='subtitle-small' style='margin-top: 8px;'>20 April 2026</div>
 </div><br>
 """, unsafe_allow_html=True)
 
