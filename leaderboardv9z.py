@@ -938,7 +938,7 @@ def render_profil_cabang(kode_cabang):
     rank_livin = get_cabang_rank("end_balance", r["end_balance"])
     rank_merchant = get_cabang_rank("total_referral_edc", r["total_referral_edc"])
     rank_transaksi = get_cabang_rank("total_poin_transaksi", r["total_poin_transaksi"])
-    rank_pct_on_us = get_cabang_rank("pct_on_us", r["pct_on_us"])
+    #rank_pct_on_us = get_cabang_rank("pct_on_us", r["pct_on_us"])
     conn.close()
 
     st.subheader(f"Profil Lengkap Cabang")
@@ -999,7 +999,7 @@ def render_profil_cabang(kode_cabang):
     trx_off_us = poin_off_us/-5
     total_trx = trx_on_us + trx_off_us
 
-    st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_pct_on_us}</span></h4>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='color:var(--accent); margin-top:28px; font-size: 1.1rem;'>💳 TRANSAKSI <span style='color:white; font-size:0.85rem; background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; margin-left:8px; border: 1px solid rgba(255,255,255,0.2);'>🏆 Rank #{rank_transaksi}</span></h4>", unsafe_allow_html=True)
     cards_transaksi = [
         ("📈", "Total Poin", fmt_num(r.get("total_poin_transaksi", 0))),
         ("🏦", "Poin On Us", fmt_num(poin_on_us)),
