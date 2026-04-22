@@ -115,9 +115,3 @@ Developed by **Gede Darmawan**
 
 ## 📄 License
 This project is for internal / educational use.
-
-
-Kalau mau next level, aku bisa bantu:
-- tambahin **badge GitHub (build, version, dll)**
-- atau bikin **README yang lebih “jualan” buat portfolio** 🚀
-```
