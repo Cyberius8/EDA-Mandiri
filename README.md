@@ -103,8 +103,7 @@ Buat file `.streamlit/secrets.toml`:
 admin_nip = "ISI_NIP_ADMIN"
 admin_pass = "ISI_PASSWORD_ADMIN"
 
-[gcp_service_account]
-# isi credential Google Service Account
+[gcp_service_account] isi credential Google Service Account
 
 ## 📌 Catatan
 * Sistem menggunakan **WAL mode** pada SQLite untuk meningkatkan performa concurrency
