@@ -1,4 +1,3 @@
-# /mnt/data/leaderboardv4.py
 import sqlite3
 import pandas as pd
 import streamlit as st
