@@ -24,10 +24,12 @@ DB_PATH = "ycc_leaderboard.db"
 # ---------------------------
 def fmt_rp(value):
     try:
-        v = int(round(float(value)))
-        return f"Rp {v:,}".replace(",", ".") + "jt"
+        v = round(float(value), 1)
+        formatted = f"{v:,.1f}" 
+        formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"Rp {formatted} Jt"
     except:
-        return "Rp 0jt"
+        return "Rp 0 Jt"
 
 def fmt_num(value):
     try:
