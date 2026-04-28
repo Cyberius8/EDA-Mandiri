@@ -443,7 +443,7 @@ def get_visit_stats(n):
 if not st.session_state.logged_in:
     st.markdown(f"<div class='header-center'><img src='{LOGO_PATH}' class='logo-img'/></div>", unsafe_allow_html=True)
     st.markdown("<h2 style='text-align:center; margin-top:20px;'>🔑 Login Dashboard</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; color:var(--muted);'>Masukkan NIP Anda untuk mengakses GMM Raceboard</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center; color:var(--muted);'>Pindah ke gmm.regionsebelas.com</p>", unsafe_allow_html=True)
     
     _, col_login, _ = st.columns([1, 2, 1])
     with col_login:
